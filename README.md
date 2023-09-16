@@ -1,18 +1,23 @@
-# TeamSpeak 3 Client Plugin SDK
+# lh2mqtt - LastHeard To Mqtt
+This TeamSpeak 3 plugin sends the name of the currently speaking user (LastHeard) to your MQTT broker and/or the channel tab.
 
-Welcome to the official helper repository for creating native plugins for the TeamSpeak 3 Client. This repository includes example code and SDK header files to assist in the development of your plugin.
+It is a fork of the <i>official TeamSpeak &copy; helper repository for creating native plugins</i>, see https://github.com/teamspeak/ts3client-pluginsdk
 
-## Quick Start Guide
+## Pre-requisites
+In order to use lh2mqtt plugin, you'll need the following:
+- TS3 windows client, see https://teamspeak.com
+- Mosquitto commandline tools, see https://mosquitto.org/download/
+- if you're using SSL to connect to your MQTT broker, you'll need the certfile (crt) of your server's certificate authority (CA), see <i>mosquitto_pub.exe</i>'s option <i>CAFILE</i>. You can e.g. download it in your browser (base64). It needs to be your main domain. If using alternative domains, it may fail (see <i>altnames</i> or <i>subjectAltName</i>, e.g. https://stackoverflow.com/questions/19787320/ssl-certificate-fails-for-ca-certificate-in-mosquitto-1-2-1-1-2-2).
 
-To get started, it's highly recommended that you base your plugin on the provided test plugin (`src/plugin.c`). This test plugin includes the necessary special functions that your plugin must export. If certain optional functions are not needed for your project, feel free to remove them. For more details, please refer to the code comments.
+## Configuration
+For configuration see your TS3 plugin directory, e.g. <code>%APPDATA%\TS3Client\plugins\lh2mqtt.ini</code>
 
-## Additional Resources
+If no lh2mqtt.ini exists when starting TeamSpeak &copy;, a new file with template values will be generated.
 
-To expand your knowledge and get support, we recommend visiting the following resources:
+You can open the config file via TS3 main menu 'Plugins/lh2mqtt'.
 
-- [TeamSpeak Community Forums](https://community.teamspeak.com): Connect with other developers and TeamSpeak users.
-- [TeamSpeak SDK Downloads](https://www.teamspeak.com/downloads#sdk): Access the latest version of our SDK and other development resources.
+## No Warrenties in any way!
+Please use this repository at your own risk and without any warrenty.<br/>
+Code is "as is" - if you have any trouble or ideas, feel free to fork and do your thing ;-)
 
-## Copyright Information
-
-This repository is protected under copyright law. Copyright &copy; TeamSpeak Systems GmbH. All rights reserved.
+I am NOT affiliated with TeamSpeak &copy; in any way.

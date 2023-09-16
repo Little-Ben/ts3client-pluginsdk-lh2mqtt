@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "teamspeak/public_definitions.h"
 #include "teamspeak/public_errors.h"
@@ -36,6 +37,10 @@ static struct TS3Functions ts3Functions;
 #endif
 
 #define PLUGIN_API_VERSION 26
+// set accordingly in project's postbuild event and in ts3plugin_version()
+//  + 3.6.0 requires API 26
+//  + 3.5.0 requires API 24
+//  + 3.3.0 requires API 23
 
 #define PATH_BUFSIZE 512
 #define COMMAND_BUFSIZE 128
@@ -45,6 +50,26 @@ static struct TS3Functions ts3Functions;
 #define RETURNCODE_BUFSIZE 128
 
 static char* pluginID = NULL;
+
+static char configIniFileName[PATH_BUFSIZE];
+static char configMqttSendStart[INFODATA_BUFSIZE];
+static char configMqttSendStop[INFODATA_BUFSIZE];
+static char configMqttExe[PATH_BUFSIZE];
+static char configMqttHost[INFODATA_BUFSIZE];
+static char configMqttPort[INFODATA_BUFSIZE];
+static char configMqttUser[INFODATA_BUFSIZE];
+static char configMqttPassword[INFODATA_BUFSIZE];
+static char configMqttTopicStart[INFODATA_BUFSIZE];
+static char configMqttTopicStop[INFODATA_BUFSIZE];
+static char configMqttQos[INFODATA_BUFSIZE];
+static char configMqttCafile[INFODATA_BUFSIZE];
+
+static char configLhShowStart[INFODATA_BUFSIZE];
+static char configLhShowStop[INFODATA_BUFSIZE];
+static char configLhColorStart[INFODATA_BUFSIZE];
+static char configLhColorStop[INFODATA_BUFSIZE];
+static char configLhPrefixStart[INFODATA_BUFSIZE];
+static char configLhPrefixStop[INFODATA_BUFSIZE];
 
 #ifdef _WIN32
 /* Helper function to convert wchar_T to Utf-8 encoded strings on Windows */
@@ -72,9 +97,9 @@ const char* ts3plugin_name()
     /* TeamSpeak expects UTF-8 encoded characters. Following demonstrates a possibility how to convert UTF-16 wchar_t into UTF-8. */
     static char* result = NULL; /* Static variable so it's allocated only once */
     if (!result) {
-        const wchar_t* name = L"Test Plugin";
+        const wchar_t* name = L"lh2mqtt";
         if (wcharToUtf8(name, &result) == -1) { /* Convert name into UTF-8 encoded result */
-            result = "Test Plugin";             /* Conversion failed, fallback here */
+            result = "lh2mqtt";                 /* Conversion failed, fallback here */
         }
     }
     return result;
@@ -86,7 +111,7 @@ const char* ts3plugin_name()
 /* Plugin version */
 const char* ts3plugin_version()
 {
-    return "1.2";
+    return "1.26.0";
 }
 
 /* Plugin API version. Must be the same as the clients API major version, else the plugin fails to load. */
@@ -99,14 +124,14 @@ int ts3plugin_apiVersion()
 const char* ts3plugin_author()
 {
     /* If you want to use wchar_t, see ts3plugin_name() on how to use */
-    return "TeamSpeak Systems GmbH";
+    return "Little.Ben, DH6BS";
 }
 
 /* Plugin description */
 const char* ts3plugin_description()
 {
     /* If you want to use wchar_t, see ts3plugin_name() on how to use */
-    return "This plugin demonstrates the TeamSpeak 3 client plugin architecture.";
+    return "This plugin sends the name of the currently speaking user (LastHeard) to a MQTT broker and/or the channel tab.";
 }
 
 /* Set TeamSpeak 3 callback functions */
@@ -137,6 +162,70 @@ int ts3plugin_init()
     ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
 
     printf("PLUGIN: App path: %s\nResources path: %s\nConfig path: %s\nPlugin path: %s\n", appPath, resourcesPath, configPath, pluginPath);
+
+    char* sectionName = NULL;
+    char* keyName     = NULL;
+
+    snprintf(configIniFileName, sizeof(configIniFileName), "%slh2mqtt.ini", pluginPath);
+
+    CreateDefaultIniFile(configIniFileName);
+
+    //-------------------------------
+    sectionName = "MQTT";
+
+    keyName = "SEND_START";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStart);
+
+    keyName = "SEND_STOP";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStop);
+
+    keyName = "PATH";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttExe);
+
+    keyName = "HOST";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttHost);
+
+    keyName = "PORT";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPort);
+
+    keyName = "USER";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttUser);
+
+    keyName = "PASSWORD";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPassword);
+
+    keyName = "TOPIC_START";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStart);
+
+    keyName = "TOPIC_STOP";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStop);
+
+    keyName = "QOS";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttQos);
+
+    keyName = "CAFILE";
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttCafile);
+
+    //-------------------------------
+    sectionName = "CHANNELTAB";
+
+    keyName = "SHOW_START";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStart);
+
+    keyName = "SHOW_STOP";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStop);
+
+    keyName = "COLOR_START";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStart);
+
+    keyName = "COLOR_STOP";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStop);
+
+    keyName = "PREFIX_START";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStart);
+
+    keyName = "PREFIX_STOP";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop);
 
     return 0; /* 0 = success, 1 = failure, -2 = failure but client will not show a "failed to load" warning */
               /* -2 is a very special case and should only be used if a plugin displays a dialog (e.g. overlay) asking the user to disable
@@ -203,7 +292,7 @@ void ts3plugin_registerPluginID(const char* id)
 /* Plugin command keyword. Return NULL or "" if not used. */
 const char* ts3plugin_commandKeyword()
 {
-    return "test";
+    return "lh2mqtt";
 }
 
 static void print_and_free_bookmarks_list(struct PluginBookmarkList* list)
@@ -480,7 +569,7 @@ void ts3plugin_currentServerConnectionChanged(uint64 serverConnectionHandlerID)
 /* Static title shown in the left column in the info frame */
 const char* ts3plugin_infoTitle()
 {
-    return "Test plugin info";
+    return "lh2mqtt info";
 }
 
 /*
@@ -566,7 +655,7 @@ static struct PluginMenuItem* createMenuItem(enum PluginMenuType type, int id, c
  * ts3plugin_onMenuItemEvent will be called passing the menu ID of the triggered menu item.
  * These IDs are freely choosable by the plugin author. It's not really needed to use an enum, it just looks prettier.
  */
-enum { MENU_ID_CLIENT_1 = 1, MENU_ID_CLIENT_2, MENU_ID_CHANNEL_1, MENU_ID_CHANNEL_2, MENU_ID_CHANNEL_3, MENU_ID_GLOBAL_1, MENU_ID_GLOBAL_2 };
+enum { MENU_ID_CLIENT_1 = 1, MENU_ID_CLIENT_2, MENU_ID_CHANNEL_1, MENU_ID_CHANNEL_2, MENU_ID_CHANNEL_3, MENU_ID_GLOBAL_1, MENU_ID_GLOBAL_2, MENU_ID_GLOBAL_3 };
 
 /*
  * Initialize plugin menus.
@@ -593,14 +682,15 @@ void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon)
 	 * e.g. for "test_plugin.dll", icon "1.png" is loaded from <TeamSpeak 3 Client install dir>\plugins\test_plugin\1.png
 	 */
 
-    BEGIN_CREATE_MENUS(7); /* IMPORTANT: Number of menu items must be correct! */
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CLIENT, MENU_ID_CLIENT_1, "Client item 1", "1.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CLIENT, MENU_ID_CLIENT_2, "Client item 2", "2.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_1, "Channel item 1", "1.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_2, "Channel item 2", "2.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_3, "Channel item 3", "3.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_GLOBAL_1, "Global item 1", "1.png");
-    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_GLOBAL_2, "Global item 2", "2.png");
+    BEGIN_CREATE_MENUS(3); /* IMPORTANT: Number of menu items must be correct! */
+    //CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CLIENT, MENU_ID_CLIENT_1, "Client item 1", "1.png");
+    //CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CLIENT, MENU_ID_CLIENT_2, "Client item 2", "2.png");
+    //CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_1, "Channel item 1", "1.png");
+    //CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_2, "Channel item 2", "2.png");
+    //CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_CHANNEL, MENU_ID_CHANNEL_3, "Channel item 3", "3.png");
+    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_GLOBAL_1, "Konfiguration &editieren", "config.png");
+    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_GLOBAL_2, "Konfiguration &neu laden", "config_refresh.png");
+    CREATE_MENU_ITEM(PLUGIN_MENU_TYPE_GLOBAL, MENU_ID_GLOBAL_3, "&Info", "about.png");
     END_CREATE_MENUS; /* Includes an assert checking if the number of menu items matched */
 
     /*
@@ -608,7 +698,7 @@ void ts3plugin_initMenus(struct PluginMenuItem*** menuItems, char** menuIcon)
 	 * If unused, set menuIcon to NULL
 	 */
     *menuIcon = (char*)malloc(PLUGIN_MENU_BUFSZ * sizeof(char));
-    _strcpy(*menuIcon, PLUGIN_MENU_BUFSZ, "t.png");
+    _strcpy(*menuIcon, PLUGIN_MENU_BUFSZ, "lh2mqtt.png");
 
     /*
 	 * Menus can be enabled or disabled with: ts3Functions.setPluginMenuEnabled(pluginID, menuID, 0|1);
@@ -844,11 +934,125 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
 {
     /* Demonstrate usage of getClientDisplayName */
     char name[512];
+
+    /* Query channel path and password of current server tab.
+     * The password parameter can be NULL if the plugin does not want to receive the channel password.
+     * Note: Channel password is only available if the user has actually used it when entering the channel. If a user has
+     * entered a channel with the permission to ignore passwords (b_channel_join_ignore_password) and the password,
+     * was not entered, it will not be available.
+     * getChannelConnectInfo returns 0 on success, 1 on error or if current server tab is disconnected. */
+    char path[CHANNELINFO_BUFSIZE];
+    /*char password[CHANNELINFO_BUFSIZE];*/
+    char* password = NULL; /* Don't receive channel password */
+
+    /* Get own clientID and channelID */
+    anyID  myID;
+    uint64 myChannelID;
+
+    char msg[CHANNELINFO_BUFSIZE];
+    char msgShell[CHANNELINFO_BUFSIZE];
+    char colorStart[PATH_BUFSIZE] = "";
+    char colorStop[PATH_BUFSIZE]  = "";
+    char prefix[PATH_BUFSIZE]     = "";
     if (ts3Functions.getClientDisplayName(serverConnectionHandlerID, clientID, name, 512) == ERROR_ok) {
+
         if (status == STATUS_TALKING) {
-            printf("--> %s starts talking\n", name);
+            printf("--> %s is currently SENDING\n", name);
+
+            if (strcmp(configLhShowStart, "1") == 0) {
+                if (strlen(configLhColorStart) > 0) {
+                    snprintf(colorStart, PATH_BUFSIZE, "[color=%s]", configLhColorStart);
+                    snprintf(colorStop, PATH_BUFSIZE, "[/color]");
+                } else {
+                    snprintf(colorStart, PATH_BUFSIZE, "[color=#5472CA]");
+                    snprintf(colorStop, PATH_BUFSIZE, "[/color]");
+                }
+
+                if (strlen(configLhPrefixStart) > 0)
+                    snprintf(prefix, PATH_BUFSIZE, "%s -> ", configLhPrefixStart);
+                else
+                    snprintf(prefix, PATH_BUFSIZE, "");
+
+                char* timeStr = GetCurrDate("%H:%M:%S");
+                if (timeStr != NULL) {
+                    snprintf(msg, sizeof(msg), "%s[b]<%s> *** %s%s[/b]%s", colorStart, timeStr, prefix, name, colorStop);
+                    free(timeStr);
+                }
+                //ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+                ts3Functions.printMessage(serverConnectionHandlerID, msg, PLUGIN_MESSAGE_TARGET_CHANNEL);
+            }
+
+            if (strcmp(configMqttSendStart, "1") == 0) {
+
+                char mqttPort[PATH_BUFSIZE]   = "";
+                char mqttQos[PATH_BUFSIZE]    = "";
+                char mqttCafile[PATH_BUFSIZE] = "";
+
+                if (strlen(configMqttPort) > 0)
+                    snprintf(mqttPort, sizeof(mqttPort), "-p %s", configMqttPort);
+
+                if (strlen(configMqttQos) > 0)
+                    snprintf(mqttQos, sizeof(mqttQos), "-q %s", configMqttQos);
+
+                if (strlen(configMqttCafile) > 0)
+                    snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
+
+                if (strlen(configMqttUser) > 0)
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStart, mqttQos, name, mqttCafile);
+                else
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStart, mqttQos, name, mqttCafile);
+
+                ExecuteCommandInBackground(msgShell, name, serverConnectionHandlerID); //modifiedString
+            }
+
         } else {
-            printf("--> %s stops talking\n", name);
+            printf("--> %s has STOPPED sending\n", name);
+
+            if (strcmp(configLhShowStop, "1") == 0) {
+                if (strlen(configLhColorStop) > 0) {
+                    snprintf(colorStart, PATH_BUFSIZE, "[color=%s]", configLhColorStop);
+                    snprintf(colorStop, PATH_BUFSIZE, "[/color]");
+                } else {
+                    snprintf(colorStart, PATH_BUFSIZE, "[color=#5472CA]");
+                    snprintf(colorStop, PATH_BUFSIZE, "[/color]");
+                }
+
+                if (strlen(configLhPrefixStop) > 0)
+                    snprintf(prefix, PATH_BUFSIZE, "%s -> ", configLhPrefixStop);
+                else
+                    snprintf(prefix, PATH_BUFSIZE, "");
+
+                char* timeStr = GetCurrDate("%H:%M:%S");
+                if (timeStr != NULL) {
+                    snprintf(msg, sizeof(msg), "%s[b]<%s> *** %s%s[/b]%s", colorStart, timeStr, prefix, name, colorStop);
+                    free(timeStr);
+                }
+                //ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+                ts3Functions.printMessage(serverConnectionHandlerID, msg, PLUGIN_MESSAGE_TARGET_CHANNEL);
+            }
+
+            if (strcmp(configMqttSendStop, "1") == 0) {
+
+                char mqttPort[PATH_BUFSIZE]   = "";
+                char mqttQos[PATH_BUFSIZE]    = "";
+                char mqttCafile[PATH_BUFSIZE] = "";
+
+                if (strlen(configMqttPort) > 0)
+                    snprintf(mqttPort, sizeof(mqttPort), "-p %s", configMqttPort);
+
+                if (strlen(configMqttQos) > 0)
+                    snprintf(mqttQos, sizeof(mqttQos), "-q %s", configMqttQos);
+
+                if (strlen(configMqttCafile) > 0)
+                    snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
+
+                if (strlen(configMqttUser) > 0)
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStop, mqttQos, name, mqttCafile);
+                else
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStop, mqttQos, name, mqttCafile);
+
+                ExecuteCommandInBackground(msgShell, name, serverConnectionHandlerID); //modifiedString
+            }
         }
     }
 }
@@ -1063,15 +1267,52 @@ void ts3plugin_onAvatarUpdated(uint64 serverConnectionHandlerID, anyID clientID,
 void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenuType type, int menuItemID, uint64 selectedItemID)
 {
     printf("PLUGIN: onMenuItemEvent: serverConnectionHandlerID=%llu, type=%d, menuItemID=%d, selectedItemID=%llu\n", (long long unsigned int)serverConnectionHandlerID, type, menuItemID, (long long unsigned int)selectedItemID);
+
+    char pluginPath[PATH_BUFSIZE];
+    ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
+
     switch (type) {
         case PLUGIN_MENU_TYPE_GLOBAL:
             /* Global menu item was triggered. selectedItemID is unused and set to zero. */
             switch (menuItemID) {
                 case MENU_ID_GLOBAL_1:
                     /* Menu global 1 was triggered */
-                    break;
+                    //MessageBox(NULL, L"Hello from plugin", L"lh2mqtt",0);
+
+                    char command[PATH_BUFSIZE];
+                    snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+                    ExecuteCommandInBackground(command, "", serverConnectionHandlerID);
+                    //break;
+
                 case MENU_ID_GLOBAL_2:
+                    ts3plugin_init();
+                    //MessageBox(NULL, L"Konfiguration wurde neu eingelesen", L"Plugin lh2mqtt", 0);
+                    ts3Functions.logMessage("Konfiguration wurde neu eingelesen", LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
+                    break;
+
+                case MENU_ID_GLOBAL_3:
                     /* Menu global 2 was triggered */
+                    char  content[1024];
+                    char  year[20];
+                    char* currentYear = GetCurrDate("%Y");
+                    char  configFile[PATH_BUFSIZE];
+                    snprintf(configFile, sizeof(configFile), "%slh2mqtt.ini", pluginPath);
+
+                    if (currentYear != NULL) {
+                        if (strcmp(currentYear, "2023") == 0)
+                            snprintf(year, sizeof(year), currentYear);
+                        else
+                            snprintf(year, sizeof(year), "2023 - %s", currentYear);
+
+                        snprintf(content, sizeof(content), "%s - TeamSpeak 3 Windows plugin\n\n%s\n\nAuthor: \t\t%s\nPlugin version: \t%s\nTS3 API version: \t%d\nCopyright: \t%s\nLicense: \t\tLGPL\n\nSource code:\nhttps://github.com/Little-Ben/ts3client-pluginsdk-lh2mqtt\n\nConfig file:\n%s", ts3plugin_name(), ts3plugin_description(),
+                                 ts3plugin_author(), ts3plugin_version(), ts3plugin_apiVersion(), year, configIniFileName);
+
+                        LPWSTR wideStr = ConvertToUnicode(content);
+                        MessageBox(NULL, wideStr, L"Plugin lh2mqtt", 0);
+                        FreeWideString(wideStr);
+
+                        free(currentYear); // release memory
+                    }
                     break;
                 default:
                     break;
@@ -1143,3 +1384,216 @@ const char* ts3plugin_keyPrefix()
 
 /* Called when client custom nickname changed */
 void ts3plugin_onClientDisplayNameChanged(uint64 serverConnectionHandlerID, anyID clientID, const char* displayName, const char* uniqueClientIdentifier) {}
+
+// Execute the command in a shell/terminal in background
+void ExecuteCommandInBackground(const char* command, const char* name, uint64 serverConnectionHandlerID)
+{
+    STARTUPINFO         si;
+    PROCESS_INFORMATION pi;
+
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    ZeroMemory(&pi, sizeof(pi));
+
+    LPWSTR wideStr = ConvertToUnicode(command);
+
+    // execute command in background
+    if (CreateProcess(NULL, wideStr, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        //ts3Functions.logMessage(command, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+        char msg[CHANNELINFO_BUFSIZE];
+        if (strlen(name) > 0) {
+            snprintf(msg, sizeof(msg), "[MQTT] Host=%s, User=%s, Topic=%s, Qos=%s, Msg=%s", configMqttHost, configMqttUser, configMqttTopicStart, configMqttQos, name);
+            ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+        }
+    } else {
+        DWORD error = GetLastError();
+        char  errorMsg[1024];
+        snprintf(errorMsg, sizeof(errorMsg), "Fehler(%d) beim Ausfuehren des Befehls: %s", error, command);
+        ts3Functions.logMessage(errorMsg, LogLevel_ERROR, "lh2mqtt", serverConnectionHandlerID);
+    }
+    FreeWideString(wideStr);
+}
+
+// Reads a value out of an INI file
+void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue)
+{
+    // read value from INI file
+    DWORD bytesRead = GetPrivateProfileStringA(sectionName, keyName, "", returnValue, CHANNELINFO_BUFSIZE, iniFileName);
+
+    if (bytesRead == 0) {
+        // set value to an empty string, if it was not found
+        returnValue[0] = '\0';
+    }
+}
+
+// Converts a string (char*) to a wide string (unicode).
+// Caller needs to free returning string's memory if not used anymore.
+LPWSTR ConvertToUnicode(const char* str)
+{
+    int    len     = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, 0);
+    LPWSTR wideStr = (LPWSTR)malloc((len + 1) * sizeof(WCHAR));
+    MultiByteToWideChar(CP_ACP, 0, str, -1, wideStr, len);
+    return wideStr;
+}
+
+// freeing wide string's memory
+void FreeWideString(LPWSTR str)
+{
+    if (str != NULL) {
+        free(str);
+    }
+}
+
+// Creating a template INI file with default values, if file does not exist
+void CreateDefaultIniFile(const char* dateiName)
+{
+    FILE* datei = NULL;
+    char* random_hex = GetRandomHex(7);
+    char topicStart[100];
+    char topicStop[100];
+
+    if (fopen_s(&datei, dateiName, "r") != 0) {
+        // file does not exist, so create it and fill it
+
+        if (fopen_s(&datei, dateiName, "w") == 0) {
+            fprintf(datei, "; lh2mqtt - LastHeard To Mqtt - TeamSpeak 3 Plugin (Windows)\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; Dieses Plugin ermoeglicht die Anzeige des zuletzt aktiven Sprechers \n");
+            fprintf(datei, ";   1) via MQTT (INI-Bereich: MQTT)\n");
+            fprintf(datei, ";   2) im Channel-Tab in TeamSpeak 3 (INI-Bereich: CHANNELTAB)\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; MQTT:\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; Fuer MQTT wird eine Installation von Mosquitto benoetigt, \n");
+            fprintf(datei, "; siehe: https://mosquitto.org/download/\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, "; PATH beinhaltet den kompletten Pfad zur mosquitto_pub.exe (inkl. EXE)\n");
+            fprintf(datei, "; HOST kann eine IP-Adresse oder ein Hostname (FQDN) sein\n");
+            fprintf(datei, ";   also 127.0.0.1 oder meine-broker-fqdn\n");
+            fprintf(datei, "; PORT des Brokers (anzugeben, falls abweichend von 1883)\n");
+            fprintf(datei, "; USER/PASSWORD/QOS sind optional\n");
+            fprintf(datei, "; CAFILE: kompletter Pfad und Dateiname des Server-CA-Bundles (SSL)\n");
+            fprintf(datei, "; SEND_START/SEND_STOP: 1 gibt an, dass die Info via MQTT gesendet wird\n");
+            fprintf(datei, "; TOPIC_START/TOPIC_STOP: Topic auf dem die Info veroeffentlicht wird\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; CHANNELTAB:\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; Farbwerte sind RGB-HEX-Codes (z.B.: #FF00FF) \n");
+            fprintf(datei, "; oder manche, einfache Farbnamen auch direkt (z.B.: green, red, yellow)\n");
+            fprintf(datei, "; siehe: https://www.farb-tabelle.de/de/farbtabelle.htm\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, "; SHOW_START/SHOW_STOP: 1 gibt an, dass Info im Channel-Tab ausgegeben wird\n");
+            fprintf(datei, "; COLOR_START/COLOR_STOP: RGB-Farbwert (bei HEX-Code mit # angeben!)\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; Diese Config wird automatisch beim Programmstart von TeamSpeak 3\n");
+            fprintf(datei, "; oder nach 'Plugins|lh2mqtt|Konfiguration editieren' neu eingelesen!\n");
+            fprintf(datei, "; Sollte keine Config existieren, wird ein Standardinhalt als Vorlage erzeugt.\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; Autor: Little.Ben, DH6BS\n");
+            fprintf(datei, "; Quellcode siehe: https://github.com/Little-Ben/ts3client-pluginsdk-lh2mqtt\n");
+            fprintf(datei, "; Lizenz: LGPL\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "\n");
+
+            fprintf(datei, "[MQTT]\n");
+            fprintf(datei, "PATH=C:\\Programme\\mosquitto\\mosquitto_pub.exe\n");
+            fprintf(datei, "HOST=test.mosquitto.org\n");
+            fprintf(datei, "PORT=\n");
+            fprintf(datei, "USER=\n");
+            fprintf(datei, "PASSWORD=\n");
+            fprintf(datei, "QOS=0\n");
+            fprintf(datei, "CAFILE=\n");
+            fprintf(datei, "SEND_START=0\n");
+            fprintf(datei, "SEND_STOP=0\n");
+            if (random_hex != NULL)
+            {
+                snprintf(topicStart, sizeof(topicStart), "TOPIC_START=lh2mqtt/%s/start\n", random_hex);
+                fprintf(datei, topicStart);
+                snprintf(topicStop, sizeof(topicStop), "TOPIC_STOP=lh2mqtt/%s/stop\n", random_hex);
+                fprintf(datei, topicStop);
+                free(random_hex);
+            }
+            fprintf(datei, "\n");
+
+            fprintf(datei, "[CHANNELTAB]\n");
+            fprintf(datei, "SHOW_START=1\n");
+            fprintf(datei, "SHOW_STOP=1\n");
+            fprintf(datei, "COLOR_START=red\n");
+            fprintf(datei, "COLOR_STOP=#008000\n");
+            fprintf(datei, "PREFIX_START=Start talking\n");
+            fprintf(datei, "PREFIX_STOP=Stop talking\n");
+            fprintf(datei, "\n");
+
+            fclose(datei);
+            printf("Die Datei wurde erstellt und mit Inhalt gefuellt.\n");
+        } else {
+            printf("Fehler beim Erstellen der Datei.\n");
+        }
+    } else {
+        // file already exists, close it and return
+        printf("Die Datei existiert bereits.\n");
+        fclose(datei);
+    }
+}
+
+// Get's the current date/time according to format parameter
+// Caller needs to free returning string's memory
+char* GetCurrDate(const char* format)
+{
+    time_t    currentTime;
+    struct tm timeInfo;
+    char*     dateStr = NULL;
+
+    // get current time
+    time(&currentTime);
+
+    // get local time
+    if (localtime_s(&timeInfo, &currentTime) != 0) {
+        // Error within localtime_s
+        return NULL;
+    }
+
+    // get date/time according to format parameter in a char*
+    dateStr = (char*)malloc(64); // plenty of buffer size
+    if (dateStr != NULL) {
+        if (strftime(dateStr, 64, format, &timeInfo) == 0) {
+            // error in strftime
+            free(dateStr);
+            return NULL;
+        }
+    }
+
+    return dateStr;
+}
+
+// Get a rondom hex number with given length
+// Caller needs to free returning string's memory
+char* GetRandomHex(int length) {
+    if (length <= 0) {
+        return NULL;
+    }
+
+    char hex_chars[] = "0123456789ABCDEF";
+    char* hex_string = (char*)malloc((length + 1) * sizeof(char));
+
+    if (hex_string == NULL) {
+        return NULL; // Error
+    }
+
+    srand((unsigned int)time(NULL)); // init random number generator with current time
+
+    for (int i = 0; i < length; i++) {
+        int random_index = rand() % 16; // choose a random index postion for current hex position
+        hex_string[i] = hex_chars[random_index];
+    }
+
+    hex_string[length] = '\0'; // null terminating the string
+
+    return hex_string;
+}
