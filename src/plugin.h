@@ -157,6 +157,7 @@ PLUGINS_EXPORTDLL const char* ts3plugin_keyPrefix();
 /* Plugin specific function */
 void   ExecuteCommandInBackground(const char* command, const char* name, uint64 serverConnectionHandlerID);
 void   ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue);
+void   WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value);
 LPWSTR ConvertToUnicode(const char* str);
 void   FreeWideString(LPWSTR str);
 void   CreateDefaultIniFile(const char* dateiName);

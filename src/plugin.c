@@ -71,6 +71,8 @@ static char configLhColorStop[INFODATA_BUFSIZE];
 static char configLhPrefixStart[INFODATA_BUFSIZE];
 static char configLhPrefixStop[INFODATA_BUFSIZE];
 
+static char configLogMqttMsg[INFODATA_BUFSIZE];
+
 #ifdef _WIN32
 /* Helper function to convert wchar_T to Utf-8 encoded strings on Windows */
 static int wcharToUtf8(const wchar_t* str, char** result)
@@ -111,7 +113,7 @@ const char* ts3plugin_name()
 /* Plugin version */
 const char* ts3plugin_version()
 {
-    return "1.26.0";
+    return "1.26.1";
 }
 
 /* Plugin API version. Must be the same as the clients API major version, else the plugin fails to load. */
@@ -227,6 +229,43 @@ int ts3plugin_init()
     keyName = "PREFIX_STOP";
     ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop);
 
+    //-------------------------------
+    sectionName = "LOGGING";
+
+    keyName = "LOG_MQTT_MSG";
+    ReadIniValue(configIniFileName, sectionName, keyName, configLogMqttMsg);
+
+    // Adding missing key to older INI-files
+    if (strlen(configLogMqttMsg) == 0)
+    {
+        WriteIniValue(configIniFileName, sectionName, keyName, "1");
+        printf("PLUGIN: missing key added to INI-file: [LOGGING]LOG_MQTT_MSG=1\n");
+    }
+
+
+    char msg0[CHANNELINFO_BUFSIZE];
+    snprintf(msg0, sizeof(msg0), "Ini-Konfigurationsdatei neu einlesen: %s", configIniFileName);
+    ts3Functions.logMessage(msg0, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
+    char msg1a[CHANNELINFO_BUFSIZE];
+    snprintf(msg1a, sizeof(msg1a), "[INI-MQTT|1] Path=%s, Host=%s, Port=%s, User=%s, Qos=%s, Cafile=%s", 
+        configMqttExe, configMqttHost, configMqttPort, configMqttUser, configMqttQos, configMqttCafile);
+        ts3Functions.logMessage(msg1a, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
+    char msg1b[CHANNELINFO_BUFSIZE];
+        snprintf(msg1b, sizeof(msg1b), "[INI-MQTT|2] SendStart=%s, SendStop=%s, TopicStart=%s, TopicStop=%s",
+            configMqttSendStart, configMqttSendStop, configMqttTopicStart, configMqttTopicStop);
+        ts3Functions.logMessage(msg1b, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
+    char msg2[CHANNELINFO_BUFSIZE];
+    snprintf(msg2, sizeof(msg2), "[INI-CHANNELTAB] ShowStart=%s, ShowStop=%s, ColorStart=%s, ColorStop=%s, PrefixStart=%s, PrefixStop=%s",
+        configLhShowStart, configLhShowStop, configLhColorStart, configLhColorStop, configLhPrefixStart, configLhPrefixStop);
+    ts3Functions.logMessage(msg2, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
+    char msg3[CHANNELINFO_BUFSIZE];
+    snprintf(msg3, sizeof(msg3), "[INI-LOGGING] LogMqttMsg=%s", configLogMqttMsg);
+    ts3Functions.logMessage(msg3, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
     return 0; /* 0 = success, 1 = failure, -2 = failure but client will not show a "failed to load" warning */
               /* -2 is a very special case and should only be used if a plugin displays a dialog (e.g. overlay) asking the user to disable
 	 * the plugin again, avoiding the show another dialog by the client telling the user the plugin failed to load.
@@ -267,13 +306,21 @@ int ts3plugin_offersConfigure()
 	 * PLUGIN_OFFERS_CONFIGURE_NEW_THREAD - Plugin does implement ts3plugin_configure and requests to run this function in an own thread
 	 * PLUGIN_OFFERS_CONFIGURE_QT_THREAD  - Plugin does implement ts3plugin_configure and requests to run this function in the Qt GUI thread
 	 */
-    return PLUGIN_OFFERS_NO_CONFIGURE; /* In this case ts3plugin_configure does not need to be implemented */
+    return PLUGIN_OFFERS_CONFIGURE_NEW_THREAD; /* In this case ts3plugin_configure does not need to be implemented */
 }
 
 /* Plugin might offer a configuration window. If ts3plugin_offersConfigure returns 0, this function does not need to be implemented. */
 void ts3plugin_configure(void* handle, void* qParentWidget)
 {
     printf("PLUGIN: configure\n");
+
+    char command[PATH_BUFSIZE];
+    char pluginPath[PATH_BUFSIZE];
+    ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
+
+    snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+    ExecuteCommandInBackground(command, "", 0);
+    ts3plugin_init();
 }
 
 /*
@@ -957,9 +1004,9 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
     if (ts3Functions.getClientDisplayName(serverConnectionHandlerID, clientID, name, 512) == ERROR_ok) {
 
         if (status == STATUS_TALKING) {
-            printf("--> %s is currently SENDING\n", name);
+            printf("PLUGIN: --> %s is currently SENDING\n", name);
 
-            if (strcmp(configLhShowStart, "1") == 0) {
+            if (atoi(configLhShowStart) == 1) {
                 if (strlen(configLhColorStart) > 0) {
                     snprintf(colorStart, PATH_BUFSIZE, "[color=%s]", configLhColorStart);
                     snprintf(colorStop, PATH_BUFSIZE, "[/color]");
@@ -978,11 +1025,11 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                     snprintf(msg, sizeof(msg), "%s[b]<%s> *** %s%s[/b]%s", colorStart, timeStr, prefix, name, colorStop);
                     free(timeStr);
                 }
-                //ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+                //ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
                 ts3Functions.printMessage(serverConnectionHandlerID, msg, PLUGIN_MESSAGE_TARGET_CHANNEL);
             }
 
-            if (strcmp(configMqttSendStart, "1") == 0) {
+            if (atoi(configMqttSendStart) == 1) {
 
                 char mqttPort[PATH_BUFSIZE]   = "";
                 char mqttQos[PATH_BUFSIZE]    = "";
@@ -1006,9 +1053,9 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
             }
 
         } else {
-            printf("--> %s has STOPPED sending\n", name);
+            printf("PLUGIN: --> %s has STOPPED sending\n", name);
 
-            if (strcmp(configLhShowStop, "1") == 0) {
+            if (atoi(configLhShowStop) == 1) {
                 if (strlen(configLhColorStop) > 0) {
                     snprintf(colorStart, PATH_BUFSIZE, "[color=%s]", configLhColorStop);
                     snprintf(colorStop, PATH_BUFSIZE, "[/color]");
@@ -1027,11 +1074,11 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                     snprintf(msg, sizeof(msg), "%s[b]<%s> *** %s%s[/b]%s", colorStart, timeStr, prefix, name, colorStop);
                     free(timeStr);
                 }
-                //ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+                //ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
                 ts3Functions.printMessage(serverConnectionHandlerID, msg, PLUGIN_MESSAGE_TARGET_CHANNEL);
             }
 
-            if (strcmp(configMqttSendStop, "1") == 0) {
+            if (atoi(configMqttSendStop) == 1) {
 
                 char mqttPort[PATH_BUFSIZE]   = "";
                 char mqttQos[PATH_BUFSIZE]    = "";
@@ -1286,8 +1333,6 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
 
                 case MENU_ID_GLOBAL_2:
                     ts3plugin_init();
-                    //MessageBox(NULL, L"Konfiguration wurde neu eingelesen", L"Plugin lh2mqtt", 0);
-                    ts3Functions.logMessage("Konfiguration wurde neu eingelesen", LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
                     break;
 
                 case MENU_ID_GLOBAL_3:
@@ -1402,17 +1447,30 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-        //ts3Functions.logMessage(command, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+        //ts3Functions.logMessage(command, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
         char msg[CHANNELINFO_BUFSIZE];
         if (strlen(name) > 0) {
-            snprintf(msg, sizeof(msg), "[MQTT] Host=%s, User=%s, Topic=%s, Qos=%s, Msg=%s", configMqttHost, configMqttUser, configMqttTopicStart, configMqttQos, name);
-            ts3Functions.logMessage(msg, LogLevel_INFO, "lh2mqtt", serverConnectionHandlerID);
+            if (atoi(configLogMqttMsg) == 1)
+            {
+                snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", configMqttTopicStart, name);
+                ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
+                printf("PLUGIN: LOG MQTT MSG: %s\n",msg);
+            }
+            else
+            {
+                printf("PLUGIN: NO LOG MQTT MSG: %s\n", name);
+            }
+        }
+        else
+        {
+            printf("PLUGIN: NO LOG NAME: %s\n", name);
         }
     } else {
         DWORD error = GetLastError();
         char  errorMsg[1024];
         snprintf(errorMsg, sizeof(errorMsg), "Fehler(%d) beim Ausfuehren des Befehls: %s", error, command);
-        ts3Functions.logMessage(errorMsg, LogLevel_ERROR, "lh2mqtt", serverConnectionHandlerID);
+        ts3Functions.logMessage(errorMsg, LogLevel_ERROR, "Plugin lh2mqtt", serverConnectionHandlerID);
+        printf("PLUGIN: %s\n", errorMsg);
     }
     FreeWideString(wideStr);
 }
@@ -1428,6 +1486,21 @@ void ReadIniValue(const char* iniFileName, const char* sectionName, const char* 
         returnValue[0] = '\0';
     }
 }
+
+// Writes a value to an INI file
+void WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value)
+{
+    // Write value to the INI file
+    BOOL result = WritePrivateProfileStringA(sectionName, keyName, value, iniFileName);
+
+    if (!result) {
+        // Handle the error if the write operation fails
+        // You can add error handling code here, such as logging the error.
+        // For now, we'll just print an error message.
+        printf("Error writing to INI file: %d\n", GetLastError());
+    }
+}
+
 
 // Converts a string (char*) to a wide string (unicode).
 // Caller needs to free returning string's memory if not used anymore.
@@ -1491,6 +1564,11 @@ void CreateDefaultIniFile(const char* dateiName)
             fprintf(datei, "; COLOR_START/COLOR_STOP: RGB-Farbwert (bei HEX-Code mit # angeben!)\n");
             fprintf(datei, ";\n");
             fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; LOGGING:\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
+            fprintf(datei, "; LOG_MQTT_MSG: 1 gibt an, dass die gesendete MQTT-Message mitgeloggt wird\n");
+            fprintf(datei, ";\n");
+            fprintf(datei, ";-------------------------------------------------------------------------------\n");
             fprintf(datei, "; Diese Config wird automatisch beim Programmstart von TeamSpeak 3\n");
             fprintf(datei, "; oder nach 'Plugins|lh2mqtt|Konfiguration editieren' neu eingelesen!\n");
             fprintf(datei, "; Sollte keine Config existieren, wird ein Standardinhalt als Vorlage erzeugt.\n");
@@ -1530,14 +1608,18 @@ void CreateDefaultIniFile(const char* dateiName)
             fprintf(datei, "PREFIX_STOP=Stop talking\n");
             fprintf(datei, "\n");
 
+            fprintf(datei, "[LOGGING]\n");
+            fprintf(datei, "LOG_MQTT_MSG=1\n");
+            fprintf(datei, "\n");
+
             fclose(datei);
-            printf("Die Datei wurde erstellt und mit Inhalt gefuellt.\n");
+            printf("PLUGIN: Die lh2mqtt-Konfigurationsdatei wurde erstellt und mit Inhalt gefuellt.\n");
         } else {
-            printf("Fehler beim Erstellen der Datei.\n");
+            printf("PLUGIN: Fehler beim Erstellen der lh2mqtt-Konfigurationsdatei.\n");
         }
     } else {
         // file already exists, close it and return
-        printf("Die Datei existiert bereits.\n");
+        printf("PLUGIN: Die lh2mqtt-Konfigurationsdatei existiert bereits.\n");
         fclose(datei);
     }
 }
