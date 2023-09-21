@@ -176,79 +176,93 @@ int ts3plugin_init()
     sectionName = "MQTT";
 
     keyName = "SEND_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStart);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStart, FALSE);
 
     keyName = "SEND_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStop);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStop, FALSE);
 
     keyName = "PATH";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttExe);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttExe, FALSE);
 
     keyName = "HOST";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttHost);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttHost, FALSE);
 
     keyName = "PORT";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPort);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPort, FALSE);
 
     keyName = "USER";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttUser);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttUser, FALSE);
 
     keyName = "PASSWORD";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPassword);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPassword, TRUE);
 
     keyName = "TOPIC_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStart);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStart, FALSE);
 
     keyName = "TOPIC_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStop);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStop, FALSE);
 
     keyName = "QOS";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttQos);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttQos, FALSE);
 
     keyName = "CAFILE";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttCafile);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttCafile, FALSE);
 
     //-------------------------------
     sectionName = "CHANNELTAB";
 
     keyName = "SHOW_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStart);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStart, FALSE);
 
     keyName = "SHOW_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStop);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStop, FALSE);
 
     keyName = "COLOR_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStart);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStart, FALSE);
 
     keyName = "COLOR_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStop);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStop, FALSE);
 
     keyName = "PREFIX_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStart);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStart, FALSE);
 
     keyName = "PREFIX_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop, FALSE);
 
     //-------------------------------
     sectionName = "LOGGING";
 
     keyName = "LOG_MQTT_MSG";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLogMqttMsg);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLogMqttMsg, FALSE);
 
     // Adding missing key to older INI-files
     if (strlen(configLogMqttMsg) == 0)
     {
-        WriteIniValue(configIniFileName, sectionName, keyName, "1");
-        printf("PLUGIN: missing key added to INI-file: [LOGGING]LOG_MQTT_MSG=1\n");
+        BOOL result = WriteIniValue(configIniFileName, sectionName, keyName, "1");
+        if (result == TRUE) {
+            snprintf(configLogMqttMsg, sizeof(configLogMqttMsg), "%s", "1");
+            printf("PLUGIN: missing key added to config file: [%s]%s=%s\n", sectionName, keyName, configLogMqttMsg);
+
+            char msg[CHANNELINFO_BUFSIZE];
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei wurde um fehlenden Schluessel ergeanzt: [%s]%s=%s", sectionName, keyName, configLogMqttMsg);
+            ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", 0);
+        }
+        else
+        {
+            printf("PLUGIN: ERROR: missing key was NOT added to config file, key should be: [%s]%s=1\n", sectionName, keyName);
+            char msg[CHANNELINFO_BUFSIZE];
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei konnte NICHT um fehlenden Schluessel ergeanzt werden - soll: [%s]%s=1 in %s", sectionName, keyName, configIniFileName);
+            ts3Functions.logMessage(msg, LogLevel_ERROR, "Plugin lh2mqtt", 0);
+        }
     }
 
 
     char msg0[CHANNELINFO_BUFSIZE];
-    snprintf(msg0, sizeof(msg0), "Ini-Konfigurationsdatei neu einlesen: %s", configIniFileName);
+    snprintf(msg0, sizeof(msg0), "Konfigurationsdatei neu einlesen: %s", configIniFileName);
     ts3Functions.logMessage(msg0, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
     char msg1a[CHANNELINFO_BUFSIZE];
-    snprintf(msg1a, sizeof(msg1a), "[INI-MQTT|1] Path=%s, Host=%s, Port=%s, User=%s, Qos=%s, Cafile=%s", 
+    snprintf(msg1a, sizeof(msg1a), "[INI-MQTT|1] Path=%s, Host=%s, Port=%s, User=%s, Password=***, Qos=%s, Cafile=%s", 
         configMqttExe, configMqttHost, configMqttPort, configMqttUser, configMqttQos, configMqttCafile);
         ts3Functions.logMessage(msg1a, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
@@ -1470,13 +1484,13 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
         char  errorMsg[1024];
         snprintf(errorMsg, sizeof(errorMsg), "Fehler(%d) beim Ausfuehren des Befehls: %s", error, command);
         ts3Functions.logMessage(errorMsg, LogLevel_ERROR, "Plugin lh2mqtt", serverConnectionHandlerID);
-        printf("PLUGIN: %s\n", errorMsg);
+        printf("PLUGIN: ERROR(%d): could not run command: %s\n", error, command);
     }
     FreeWideString(wideStr);
 }
 
-// Reads a value out of an INI file
-void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue)
+// Reads a value out of an INI file, bHideLog suppresses output to TS3 console
+void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, BOOL bHideLog)
 {
     // read value from INI file
     DWORD bytesRead = GetPrivateProfileStringA(sectionName, keyName, "", returnValue, CHANNELINFO_BUFSIZE, iniFileName);
@@ -1485,10 +1499,14 @@ void ReadIniValue(const char* iniFileName, const char* sectionName, const char* 
         // set value to an empty string, if it was not found
         returnValue[0] = '\0';
     }
+    if (bHideLog == TRUE)
+        printf("PLUGIN: ReadIniValue: [%s]%s=%s\n", sectionName, keyName, "***");
+    else
+        printf("PLUGIN: ReadIniValue: [%s]%s=%s\n", sectionName, keyName, returnValue);
 }
 
 // Writes a value to an INI file
-void WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value)
+BOOL WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value)
 {
     // Write value to the INI file
     BOOL result = WritePrivateProfileStringA(sectionName, keyName, value, iniFileName);
@@ -1497,8 +1515,12 @@ void WriteIniValue(const char* iniFileName, const char* sectionName, const char*
         // Handle the error if the write operation fails
         // You can add error handling code here, such as logging the error.
         // For now, we'll just print an error message.
-        printf("Error writing to INI file: %d\n", GetLastError());
+        printf("PLUGIN: Error writing to config file: %d\n", GetLastError());
     }
+    else
+        printf("PLUGIN: WriteIniValue: [%s]%s=%s\n", sectionName, keyName, value);
+
+    return result;
 }
 
 
@@ -1521,17 +1543,17 @@ void FreeWideString(LPWSTR str)
 }
 
 // Creating a template INI file with default values, if file does not exist
-void CreateDefaultIniFile(const char* dateiName)
+void CreateDefaultIniFile(const char* fileName)
 {
     FILE* datei = NULL;
     char* random_hex = GetRandomHex(7);
     char topicStart[100];
     char topicStop[100];
 
-    if (fopen_s(&datei, dateiName, "r") != 0) {
+    if (fopen_s(&datei, fileName, "r") != 0) {
         // file does not exist, so create it and fill it
 
-        if (fopen_s(&datei, dateiName, "w") == 0) {
+        if (fopen_s(&datei, fileName, "w") == 0) {
             fprintf(datei, "; lh2mqtt - LastHeard To Mqtt - TeamSpeak 3 Plugin (Windows)\n");
             fprintf(datei, ";-------------------------------------------------------------------------------\n");
             fprintf(datei, "; Dieses Plugin ermoeglicht die Anzeige des zuletzt aktiven Sprechers \n");
@@ -1613,13 +1635,13 @@ void CreateDefaultIniFile(const char* dateiName)
             fprintf(datei, "\n");
 
             fclose(datei);
-            printf("PLUGIN: Die lh2mqtt-Konfigurationsdatei wurde erstellt und mit Inhalt gefuellt.\n");
+            printf("PLUGIN: lh2mqtt config file was created and filled with template values.\n");
         } else {
-            printf("PLUGIN: Fehler beim Erstellen der lh2mqtt-Konfigurationsdatei.\n");
+            printf("PLUGIN: ERROR: lh2mqtt config file could not be created %s\n", fileName);
         }
     } else {
         // file already exists, close it and return
-        printf("PLUGIN: Die lh2mqtt-Konfigurationsdatei existiert bereits.\n");
+        printf("PLUGIN: lh2mqtt config file already exists.\n");
         fclose(datei);
     }
 }
