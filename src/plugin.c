@@ -244,14 +244,14 @@ int ts3plugin_init()
             printf("PLUGIN: missing key added to config file: [%s]%s=%s\n", sectionName, keyName, configLogMqttMsg);
 
             char msg[CHANNELINFO_BUFSIZE];
-            snprintf(msg, sizeof(msg), "Konfigurationsdatei wurde um fehlenden Schluessel ergeanzt: [%s]%s=%s", sectionName, keyName, configLogMqttMsg);
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei wurde um fehlenden Schluessel ergaenzt: [%s]%s=%s", sectionName, keyName, configLogMqttMsg);
             ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", 0);
         }
         else
         {
             printf("PLUGIN: ERROR: missing key was NOT added to config file, key should be: [%s]%s=1\n", sectionName, keyName);
             char msg[CHANNELINFO_BUFSIZE];
-            snprintf(msg, sizeof(msg), "Konfigurationsdatei konnte NICHT um fehlenden Schluessel ergeanzt werden - soll: [%s]%s=1 in %s", sectionName, keyName, configIniFileName);
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei konnte NICHT um fehlenden Schluessel ergaenzt werden - soll: [%s]%s=1 in %s", sectionName, keyName, configIniFileName);
             ts3Functions.logMessage(msg, LogLevel_ERROR, "Plugin lh2mqtt", 0);
         }
     }
