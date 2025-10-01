@@ -16,8 +16,8 @@ If no lh2mqtt.ini exists when starting TeamSpeak &copy;, a new file with templat
 
 You can open the config file via TS3 main menu 'Plugins/lh2mqtt'.
 
-## No Warrenties in any way!
-Please use this repository at your own risk and without any warrenty.<br/>
+## No Warranties in any way!
+Please use this repository at your own risk and without any warranty.<br/>
 Code is "as is" - if you have any trouble or ideas, feel free to fork and do your thing ;-)
 
 I am NOT affiliated with TeamSpeak &copy; in any way.
