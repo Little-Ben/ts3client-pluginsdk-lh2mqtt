@@ -23,9 +23,11 @@ ini.o: src/ini.c src/ini.h
 	gcc $(INCLUDES) $(CFLAGS) src/ini.c -o ini.o
 
 install: lh2mqtt
-	@mkdir -p $(HOME)/.ts3client/plugins
-	cp lh2mqtt.so $(HOME)/.ts3client/plugins/
-	@echo "Plugin installiert nach $(HOME)/.ts3client/plugins/"
+	@mkdir -p $(HOME)/.ts3client/plugins/lh2mqtt
+	cp lh2mqtt.so $(HOME)/.ts3client/plugins/lh2mqtt/
+	@echo "Plugin installiert nach $(HOME)/.ts3client/plugins/lh2mqtt/"
+	cp src/icons/lh2mqtt/*.png $(HOME)/.ts3client/plugins/lh2mqtt/
+	@echo "Icons installiert nach $(HOME)/.ts3client/plugins/lh2mqtt/"
 
 clean:
 	rm -f *.o lh2mqtt.so
