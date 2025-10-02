@@ -22,19 +22,27 @@
 #include "ts3_functions.h"
 
 #include "plugin.h"
+#include "ini_wrapper.h"
 
 static struct TS3Functions ts3Functions;
 
+static int LocalTimeSafe(const time_t* t, struct tm* out) {
+#ifdef _WIN32
+    return localtime_s(out, t);
+#else
+    return localtime_r(t, out) == NULL ? 1 : 0;
+#endif
+}
+
 #ifdef _WIN32
 #define _strcpy(dest, destSize, src) strcpy_s(dest, destSize, src)
-#define snprintf sprintf_s
+#define _snprintf(dest, size, fmt, ...) sprintf_s(dest, size, fmt, __VA_ARGS__)
 #else
-#define _strcpy(dest, destSize, src)                                                                                                                                                                                                                           \
-    {                                                                                                                                                                                                                                                          \
-        strncpy(dest, src, destSize - 1);                                                                                                                                                                                                                      \
-        (dest)[destSize - 1] = '\0';                                                                                                                                                                                                                           \
-    }
+#include <stdio.h>
+#define _strcpy(dest, destSize, src) snprintf(dest, destSize, "%s", src)
+#define _snprintf(dest, size, fmt, ...) snprintf(dest, size, fmt, ##__VA_ARGS__)
 #endif
+
 
 #define PLUGIN_API_VERSION 26
 // set accordingly in project's postbuild event and in ts3plugin_version()
@@ -48,30 +56,36 @@ static struct TS3Functions ts3Functions;
 #define SERVERINFO_BUFSIZE 256
 #define CHANNELINFO_BUFSIZE 512
 #define RETURNCODE_BUFSIZE 128
+#define BIG_BUFSIZE 1024
+#define TS3LOG_BUFSIZE 2000
+#define SHELL_BUFSIZE 2000
 
 static char* pluginID = NULL;
 
-static char configIniFileName[PATH_BUFSIZE];
-static char configMqttSendStart[INFODATA_BUFSIZE];
-static char configMqttSendStop[INFODATA_BUFSIZE];
-static char configMqttExe[PATH_BUFSIZE];
-static char configMqttHost[INFODATA_BUFSIZE];
-static char configMqttPort[INFODATA_BUFSIZE];
-static char configMqttUser[INFODATA_BUFSIZE];
-static char configMqttPassword[INFODATA_BUFSIZE];
-static char configMqttTopicStart[INFODATA_BUFSIZE];
-static char configMqttTopicStop[INFODATA_BUFSIZE];
-static char configMqttQos[INFODATA_BUFSIZE];
-static char configMqttCafile[INFODATA_BUFSIZE];
+static char configIniFileName[BIG_BUFSIZE];
 
-static char configLhShowStart[INFODATA_BUFSIZE];
-static char configLhShowStop[INFODATA_BUFSIZE];
-static char configLhColorStart[INFODATA_BUFSIZE];
-static char configLhColorStop[INFODATA_BUFSIZE];
-static char configLhPrefixStart[INFODATA_BUFSIZE];
-static char configLhPrefixStop[INFODATA_BUFSIZE];
+static char configMqttExe[PATH_LEN];
+static char configMqttHost[HOST_LEN];
+static char configMqttPort[PORT_LEN];
+static char configMqttUser[USER_LEN];
+static char configMqttPassword[PASSWORD_LEN];
+static char configMqttQos[QOS_LEN];
+static char configMqttCafile[CAFILE_LEN];
+static char configMqttSendStart[LOG_LEN];
+static char configMqttSendStop[LOG_LEN];
+static char configMqttTopicStart[TOPIC_LEN];
+static char configMqttTopicStop[TOPIC_LEN];
 
-static char configLogMqttMsg[INFODATA_BUFSIZE];
+static char configLhShowStart[LOG_LEN];
+static char configLhShowStop[LOG_LEN];
+static char configLhColorStart[COLOR_LEN];
+static char configLhColorStop[COLOR_LEN];
+static char configLhPrefixStart[PREFIX_LEN];
+static char configLhPrefixStop[PREFIX_LEN];
+
+static char configLogMqttMsg[LOG_LEN];
+
+static char configGeneralLanguage[LANG_LEN];
 
 #ifdef _WIN32
 /* Helper function to convert wchar_T to Utf-8 encoded strings on Windows */
@@ -106,14 +120,14 @@ const char* ts3plugin_name()
     }
     return result;
 #else
-    return "Test Plugin";
+    return "lh2mqtt";
 #endif
 }
 
 /* Plugin version */
 const char* ts3plugin_version()
 {
-    return "1.26.1";
+    return "1.26.2";
 }
 
 /* Plugin API version. Must be the same as the clients API major version, else the plugin fails to load. */
@@ -133,7 +147,10 @@ const char* ts3plugin_author()
 const char* ts3plugin_description()
 {
     /* If you want to use wchar_t, see ts3plugin_name() on how to use */
-    return "This plugin sends the name of the currently speaking user (LastHeard) to a MQTT broker and/or the channel tab.";
+    if (strcmp(configGeneralLanguage, "DE") == 0)
+        return "Dieses Plugin überträgt den aktuell sprechenden User (LastHeard) an einen MQTT-Broker und/oder an den Channel-Tab.";
+
+    return "This plugin transmits the currently speaking user (LastHeard) to an MQTT broker and/or the channel tab.";
 }
 
 /* Set TeamSpeak 3 callback functions */
@@ -169,71 +186,75 @@ int ts3plugin_init()
     char* keyName     = NULL;
 
     snprintf(configIniFileName, sizeof(configIniFileName), "%slh2mqtt.ini", pluginPath);
-
+ 
     CreateDefaultIniFile(configIniFileName);
 
-    //-------------------------------
+#ifndef _WIN32
+    ReadCompleteIniFile(configIniFileName);
+#endif
+
+     //-------------------------------
     sectionName = "MQTT";
 
     keyName = "SEND_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStart, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStart, sizeof(configMqttSendStart), FALSE);
 
     keyName = "SEND_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStop, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttSendStop, sizeof(configMqttSendStop), FALSE);
 
     keyName = "PATH";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttExe, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttExe, sizeof(configMqttExe), FALSE);
 
     keyName = "HOST";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttHost, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttHost, sizeof(configMqttHost), FALSE);
 
     keyName = "PORT";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPort, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPort, sizeof(configMqttPort), FALSE);
 
     keyName = "USER";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttUser, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttUser, sizeof(configMqttUser), FALSE);
 
     keyName = "PASSWORD";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPassword, TRUE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttPassword, sizeof(configMqttPassword), TRUE);
 
     keyName = "TOPIC_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStart, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStart, sizeof(configMqttTopicStart), FALSE);
 
     keyName = "TOPIC_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStop, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttTopicStop, sizeof(configMqttTopicStop), FALSE);
 
     keyName = "QOS";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttQos, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttQos, sizeof(configMqttQos), FALSE);
 
     keyName = "CAFILE";
-    ReadIniValue(configIniFileName, sectionName, keyName, configMqttCafile, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configMqttCafile, sizeof(configMqttCafile), FALSE);
 
     //-------------------------------
     sectionName = "CHANNELTAB";
 
     keyName = "SHOW_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStart, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStart, sizeof(configLhShowStart), FALSE);
 
     keyName = "SHOW_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStop, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhShowStop, sizeof(configLhShowStop), FALSE);
 
     keyName = "COLOR_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStart, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStart, sizeof(configLhColorStart), FALSE);
 
     keyName = "COLOR_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStop, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhColorStop, sizeof(configLhColorStop), FALSE);
 
     keyName = "PREFIX_START";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStart, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStart, sizeof(configLhPrefixStart), FALSE);
 
     keyName = "PREFIX_STOP";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLhPrefixStop, sizeof(configLhPrefixStop), FALSE);
 
     //-------------------------------
     sectionName = "LOGGING";
 
     keyName = "LOG_MQTT_MSG";
-    ReadIniValue(configIniFileName, sectionName, keyName, configLogMqttMsg, FALSE);
+    ReadIniValue(configIniFileName, sectionName, keyName, configLogMqttMsg, sizeof(configLogMqttMsg), FALSE);
 
     // Adding missing key to older INI-files
     if (strlen(configLogMqttMsg) == 0)
@@ -243,42 +264,76 @@ int ts3plugin_init()
             snprintf(configLogMqttMsg, sizeof(configLogMqttMsg), "%s", "1");
             printf("PLUGIN: missing key added to config file: [%s]%s=%s\n", sectionName, keyName, configLogMqttMsg);
 
-            char msg[CHANNELINFO_BUFSIZE];
+            char msg[TS3LOG_BUFSIZE];
             snprintf(msg, sizeof(msg), "Konfigurationsdatei wurde um fehlenden Schluessel ergaenzt: [%s]%s=%s", sectionName, keyName, configLogMqttMsg);
             ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", 0);
         }
         else
         {
             printf("PLUGIN: ERROR: missing key was NOT added to config file, key should be: [%s]%s=1\n", sectionName, keyName);
-            char msg[CHANNELINFO_BUFSIZE];
+            char msg[TS3LOG_BUFSIZE];
             snprintf(msg, sizeof(msg), "Konfigurationsdatei konnte NICHT um fehlenden Schluessel ergaenzt werden - soll: [%s]%s=1 in %s", sectionName, keyName, configIniFileName);
+            ts3Functions.logMessage(msg, LogLevel_ERROR, "Plugin lh2mqtt", 0);
+
+        }
+    }
+
+    //-------------------------------
+    sectionName = "GENERAL";
+
+    keyName = "LANGUAGE";
+    ReadIniValue(configIniFileName, sectionName, keyName, configGeneralLanguage, sizeof(configGeneralLanguage), FALSE);
+
+    // Adding missing key to older INI-files
+    if (strlen(configGeneralLanguage) == 0)
+    {
+        BOOL result = WriteIniValue(configIniFileName, sectionName, keyName, "DE");
+        if (result == TRUE) {
+            snprintf(configGeneralLanguage, sizeof(configGeneralLanguage), "%s", "DE");
+            printf("PLUGIN: missing key added to config file: [%s]%s=%s\n", sectionName, keyName, configGeneralLanguage);
+
+            char msg[TS3LOG_BUFSIZE];
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei wurde um fehlenden Schluessel ergaenzt: [%s]%s=%s", sectionName, keyName, configGeneralLanguage);
+            ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", 0);
+        }
+        else
+        {
+            printf("PLUGIN: ERROR: missing key was NOT added to config file, key should be: [%s]%s=DE oder EN\n", sectionName, keyName);
+            char msg[TS3LOG_BUFSIZE];
+            snprintf(msg, sizeof(msg), "Konfigurationsdatei konnte NICHT um fehlenden Schluessel ergaenzt werden - soll: [%s]%s=DE oder EN in %s", sectionName, keyName, configIniFileName);
             ts3Functions.logMessage(msg, LogLevel_ERROR, "Plugin lh2mqtt", 0);
         }
     }
 
-
-    char msg0[CHANNELINFO_BUFSIZE];
+    FlushIniFile();
+    
+    char msg0[TS3LOG_BUFSIZE];
     snprintf(msg0, sizeof(msg0), "Konfigurationsdatei neu einlesen: %s", configIniFileName);
     ts3Functions.logMessage(msg0, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
-    char msg1a[CHANNELINFO_BUFSIZE];
+    char msg1a[TS3LOG_BUFSIZE];
     snprintf(msg1a, sizeof(msg1a), "[INI-MQTT|1] Path=%s, Host=%s, Port=%s, User=%s, Password=***, Qos=%s, Cafile=%s", 
         configMqttExe, configMqttHost, configMqttPort, configMqttUser, configMqttQos, configMqttCafile);
         ts3Functions.logMessage(msg1a, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
-    char msg1b[CHANNELINFO_BUFSIZE];
+    char msg1b[TS3LOG_BUFSIZE];
         snprintf(msg1b, sizeof(msg1b), "[INI-MQTT|2] SendStart=%s, SendStop=%s, TopicStart=%s, TopicStop=%s",
             configMqttSendStart, configMqttSendStop, configMqttTopicStart, configMqttTopicStop);
         ts3Functions.logMessage(msg1b, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
-    char msg2[CHANNELINFO_BUFSIZE];
+    char msg2[TS3LOG_BUFSIZE];
     snprintf(msg2, sizeof(msg2), "[INI-CHANNELTAB] ShowStart=%s, ShowStop=%s, ColorStart=%s, ColorStop=%s, PrefixStart=%s, PrefixStop=%s",
         configLhShowStart, configLhShowStop, configLhColorStart, configLhColorStop, configLhPrefixStart, configLhPrefixStop);
     ts3Functions.logMessage(msg2, LogLevel_INFO, "Plugin lh2mqtt", 0);
 
-    char msg3[CHANNELINFO_BUFSIZE];
+    char msg3[TS3LOG_BUFSIZE];
     snprintf(msg3, sizeof(msg3), "[INI-LOGGING] LogMqttMsg=%s", configLogMqttMsg);
     ts3Functions.logMessage(msg3, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
+    char msg4[TS3LOG_BUFSIZE];
+    snprintf(msg4, sizeof(msg4), "[INI-GENERAL] Language=%s", configGeneralLanguage);
+    ts3Functions.logMessage(msg4, LogLevel_INFO, "Plugin lh2mqtt", 0);
+
 
     return 0; /* 0 = success, 1 = failure, -2 = failure but client will not show a "failed to load" warning */
               /* -2 is a very special case and should only be used if a plugin displays a dialog (e.g. overlay) asking the user to disable
@@ -328,13 +383,25 @@ void ts3plugin_configure(void* handle, void* qParentWidget)
 {
     printf("PLUGIN: configure\n");
 
-    char command[PATH_BUFSIZE];
+    char command[SHELL_BUFSIZE];
     char pluginPath[PATH_BUFSIZE];
     ts3Functions.getPluginPath(pluginPath, PATH_BUFSIZE, pluginID);
 
-    snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+    #ifdef _WIN32
+        snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+    #else
+        snprintf(command, sizeof(command), "xdg-open \"%slh2mqtt.ini\"", pluginPath);
+    #endif
+
     ExecuteCommandInBackground(command, "", 0);
-    ts3plugin_init();
+    #ifdef _WIN32
+        ts3plugin_init();
+    #else
+        if (strcmp(configGeneralLanguage, "DE") == 0)
+            ts3Functions.printMessageToCurrentTab("[b]Bitte nach dem Speichern der Änderungen, die Konfiguration via Plugins-Menü neu laden[/b]");
+        else
+            ts3Functions.printMessageToCurrentTab("[b]Please reload configuration via plugins menu after saving changes to INI file[/b]");
+    #endif
 }
 
 /*
@@ -489,7 +556,7 @@ int ts3plugin_processCommand(uint64 serverConnectionHandlerID, const char* comma
             char*          password = NULL; /* Don't receive server password */
             unsigned short port;
             if (!ts3Functions.getServerConnectInfo(serverConnectionHandlerID, host, &port, password, SERVERINFO_BUFSIZE)) {
-                char msg[SERVERINFO_BUFSIZE];
+                char msg[CHANNELINFO_BUFSIZE];
                 snprintf(msg, sizeof(msg), "Server Connect Info: %s:%d", host, port);
                 ts3Functions.printMessageToCurrentTab(msg);
             } else {
@@ -523,7 +590,7 @@ int ts3plugin_processCommand(uint64 serverConnectionHandlerID, const char* comma
 
             /* Get channel connect info of own channel */
             if (!ts3Functions.getChannelConnectInfo(serverConnectionHandlerID, myChannelID, path, password, CHANNELINFO_BUFSIZE)) {
-                char msg[CHANNELINFO_BUFSIZE];
+                char msg[BIG_BUFSIZE];
                 snprintf(msg, sizeof(msg), "Channel Connect Info: %s", path);
                 ts3Functions.printMessageToCurrentTab(msg);
             } else {
@@ -1002,16 +1069,16 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
      * entered a channel with the permission to ignore passwords (b_channel_join_ignore_password) and the password,
      * was not entered, it will not be available.
      * getChannelConnectInfo returns 0 on success, 1 on error or if current server tab is disconnected. */
-    char path[CHANNELINFO_BUFSIZE];
+    // char path[CHANNELINFO_BUFSIZE];
     /*char password[CHANNELINFO_BUFSIZE];*/
-    char* password = NULL; /* Don't receive channel password */
+    // char* password = NULL; /* Don't receive channel password */
 
     /* Get own clientID and channelID */
-    anyID  myID;
-    uint64 myChannelID;
+    // anyID  myID;
+    // uint64 myChannelID;
 
-    char msg[CHANNELINFO_BUFSIZE];
-    char msgShell[CHANNELINFO_BUFSIZE];
+    char msg[BIG_BUFSIZE];
+    char msgShell[SHELL_BUFSIZE];
     char colorStart[PATH_BUFSIZE] = "";
     char colorStop[PATH_BUFSIZE]  = "";
     char prefix[PATH_BUFSIZE]     = "";
@@ -1032,7 +1099,7 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                 if (strlen(configLhPrefixStart) > 0)
                     snprintf(prefix, PATH_BUFSIZE, "%s -> ", configLhPrefixStart);
                 else
-                    snprintf(prefix, PATH_BUFSIZE, "");
+                    prefix[0] = '\0';
 
                 char* timeStr = GetCurrDate("%H:%M:%S");
                 if (timeStr != NULL) {
@@ -1081,7 +1148,7 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                 if (strlen(configLhPrefixStop) > 0)
                     snprintf(prefix, PATH_BUFSIZE, "%s -> ", configLhPrefixStop);
                 else
-                    snprintf(prefix, PATH_BUFSIZE, "");
+                    prefix[0] = '\0';
 
                 char* timeStr = GetCurrDate("%H:%M:%S");
                 if (timeStr != NULL) {
@@ -1340,35 +1407,60 @@ void ts3plugin_onMenuItemEvent(uint64 serverConnectionHandlerID, enum PluginMenu
                     /* Menu global 1 was triggered */
                     //MessageBox(NULL, L"Hello from plugin", L"lh2mqtt",0);
 
-                    char command[PATH_BUFSIZE];
-                    snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+                    char command[BIG_BUFSIZE];
+                    #ifdef _WIN32
+                        snprintf(command, sizeof(command), "notepad.exe \"%slh2mqtt.ini\"", pluginPath);
+                    #else
+                        snprintf(command, sizeof(command), "xdg-open \"%slh2mqtt.ini\"", pluginPath);
+                    #endif
                     ExecuteCommandInBackground(command, "", serverConnectionHandlerID);
-                    //break;
 
-                case MENU_ID_GLOBAL_2:
+                    #ifndef _WIN32
+                        if (strcmp(configGeneralLanguage, "DE") == 0)
+                            ts3Functions.printMessageToCurrentTab("[b]Bitte nach dem Speichern der Änderungen die Konfiguration via Plugins-Menü neu laden[/b]");
+                        else
+                            ts3Functions.printMessageToCurrentTab("[b]Please reload configuration via plugins menu after saving changes to INI file[/b]");
+                        
+                        break;
+                    #endif
+
+                    case MENU_ID_GLOBAL_2:
                     ts3plugin_init();
                     break;
 
                 case MENU_ID_GLOBAL_3:
                     /* Menu global 2 was triggered */
-                    char  content[1024];
+                    char  content[1500];
                     char  year[20];
                     char* currentYear = GetCurrDate("%Y");
-                    char  configFile[PATH_BUFSIZE];
-                    snprintf(configFile, sizeof(configFile), "%slh2mqtt.ini", pluginPath);
 
                     if (currentYear != NULL) {
                         if (strcmp(currentYear, "2023") == 0)
-                            snprintf(year, sizeof(year), currentYear);
+                            snprintf(year, sizeof(year), "%s", currentYear);
                         else
                             snprintf(year, sizeof(year), "2023 - %s", currentYear);
 
-                        snprintf(content, sizeof(content), "%s - TeamSpeak 3 Windows plugin\n\n%s\n\nAuthor: \t\t%s\nPlugin version: \t%s\nTS3 API version: \t%d\nCopyright: \t%s\nLicense: \t\tLGPL\n\nSource code:\nhttps://github.com/Little-Ben/ts3client-pluginsdk-lh2mqtt\n\nConfig file:\n%s", ts3plugin_name(), ts3plugin_description(),
+                        #ifdef _WIN32
+                            const char* platform = "Windows";
+                        #else
+                            const char* platform = "Linux";
+                        #endif
+
+                        if (strcmp(configGeneralLanguage, "DE") == 0)
+                            snprintf(content, sizeof(content), "%s - TeamSpeak 3 %s Plugin\n\n%s\n\nAutor: \t\t%s\nPlugin Version: \t%s\nTS3 API Version: \t%d\nCopyright: \t%s\nLizenz: \t\tLGPL\n\nQuellcode:\nhttps://github.com/Little-Ben/ts3client-pluginsdk-lh2mqtt\n\nKonfigurationsdatei:\n%s", ts3plugin_name(), platform, ts3plugin_description(),
+                                 ts3plugin_author(), ts3plugin_version(), ts3plugin_apiVersion(), year, configIniFileName);
+                        else
+                            snprintf(content, sizeof(content), "%s - TeamSpeak 3 %s plugin\n\n%s\n\nAuthor: \t\t%s\nPlugin version: \t%s\nTS3 API version: \t%d\nCopyright: \t%s\nLicense: \t\tLGPL\n\nSource code:\nhttps://github.com/Little-Ben/ts3client-pluginsdk-lh2mqtt\n\nConfig file:\n%s", ts3plugin_name(), platform, ts3plugin_description(),
                                  ts3plugin_author(), ts3plugin_version(), ts3plugin_apiVersion(), year, configIniFileName);
 
-                        LPWSTR wideStr = ConvertToUnicode(content);
-                        MessageBox(NULL, wideStr, L"Plugin lh2mqtt", 0);
-                        FreeWideString(wideStr);
+                        #ifdef _WIN32
+                            LPWSTR wideStr = ConvertToUnicode(content);
+                            MessageBox(NULL, wideStr, L"Plugin lh2mqtt", 0);
+                            FreeWideString(wideStr);
+                        #else
+                            // MsgBox gibt es nicht unter Linux, daher in den aktiven Tab ausgeben
+                            ts3Functions.printMessageToCurrentTab(content);
+                        #endif
 
                         free(currentYear); // release memory
                     }
@@ -1447,6 +1539,7 @@ void ts3plugin_onClientDisplayNameChanged(uint64 serverConnectionHandlerID, anyI
 // Execute the command in a shell/terminal in background
 void ExecuteCommandInBackground(const char* command, const char* name, uint64 serverConnectionHandlerID)
 {
+#ifdef _WIN32
     STARTUPINFO         si;
     PROCESS_INFORMATION pi;
 
@@ -1475,10 +1568,6 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
                 printf("PLUGIN: NO LOG MQTT MSG: %s\n", name);
             }
         }
-        else
-        {
-            printf("PLUGIN: NO LOG NAME: %s\n", name);
-        }
     } else {
         DWORD error = GetLastError();
         char  errorMsg[1024];
@@ -1487,19 +1576,40 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
         printf("PLUGIN: ERROR(%d): could not run command: %s\n", error, command);
     }
     FreeWideString(wideStr);
+#else
+    printf("PLUGIN EXEC: %s\n", command);
+    int ret = system(command);
+    if (ret != 0) {
+        printf("PLUGIN EXEC: ERROR: shell command execution failed, code: %d\n",ret);
+    }
+    
+    char msg[CHANNELINFO_BUFSIZE];
+    if (strlen(name) > 0) {
+        if (atoi(configLogMqttMsg) == 1)
+        {
+            snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", configMqttTopicStart, name);
+            ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
+            printf("PLUGIN: LOG MQTT MSG: %s\n",msg);
+        }
+        else
+        {
+            printf("PLUGIN: NO LOG MQTT MSG: %s\n", name);
+        }
+    }
+#endif
 }
 
 // Reads a value out of an INI file, bHideLog suppresses output to TS3 console
-void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, BOOL bHideLog)
+void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, size_t bufferSize, BOOL bHideLog)
 {
     // read value from INI file
-    DWORD bytesRead = GetPrivateProfileStringA(sectionName, keyName, "", returnValue, CHANNELINFO_BUFSIZE, iniFileName);
-
+    DWORD bytesRead = GetPrivateProfileStringA(sectionName, keyName, "", returnValue, bufferSize, iniFileName);
+    
     if (bytesRead == 0) {
         // set value to an empty string, if it was not found
         returnValue[0] = '\0';
     }
-    if (bHideLog == TRUE)
+    if (bHideLog == 1)
         printf("PLUGIN: ReadIniValue: [%s]%s=%s\n", sectionName, keyName, "***");
     else
         printf("PLUGIN: ReadIniValue: [%s]%s=%s\n", sectionName, keyName, returnValue);
@@ -1515,7 +1625,7 @@ BOOL WriteIniValue(const char* iniFileName, const char* sectionName, const char*
         // Handle the error if the write operation fails
         // You can add error handling code here, such as logging the error.
         // For now, we'll just print an error message.
-        printf("PLUGIN: Error writing to config file: %d\n", GetLastError());
+        printf("PLUGIN: ERROR writing to config file\n");
     }
     else
         printf("PLUGIN: WriteIniValue: [%s]%s=%s\n", sectionName, keyName, value);
@@ -1523,7 +1633,7 @@ BOOL WriteIniValue(const char* iniFileName, const char* sectionName, const char*
     return result;
 }
 
-
+#ifdef _WIN32
 // Converts a string (char*) to a wide string (unicode).
 // Caller needs to free returning string's memory if not used anymore.
 LPWSTR ConvertToUnicode(const char* str)
@@ -1533,6 +1643,7 @@ LPWSTR ConvertToUnicode(const char* str)
     MultiByteToWideChar(CP_ACP, 0, str, -1, wideStr, len);
     return wideStr;
 }
+#endif
 
 // freeing wide string's memory
 void FreeWideString(LPWSTR str)
@@ -1550,11 +1661,18 @@ void CreateDefaultIniFile(const char* fileName)
     char topicStart[100];
     char topicStop[100];
 
-    if (fopen_s(&datei, fileName, "r") != 0) {
+    
+    datei = fopen(fileName, "r");
+    if (!datei) {
         // file does not exist, so create it and fill it
 
-        if (fopen_s(&datei, fileName, "w") == 0) {
-            fprintf(datei, "; lh2mqtt - LastHeard To Mqtt - TeamSpeak 3 Plugin (Windows)\n");
+        datei = fopen(fileName, "w");
+        if (datei) {
+            #ifdef _WIN32
+                fprintf(datei, "; lh2mqtt - LastHeard To Mqtt - TeamSpeak 3 Plugin (Windows)\n");
+            #else
+                fprintf(datei, "; lh2mqtt - LastHeard To Mqtt - TeamSpeak 3 Plugin (Linux)\n");
+            #endif
             fprintf(datei, ";-------------------------------------------------------------------------------\n");
             fprintf(datei, "; Dieses Plugin ermoeglicht die Anzeige des zuletzt aktiven Sprechers \n");
             fprintf(datei, ";   1) via MQTT (INI-Bereich: MQTT)\n");
@@ -1566,7 +1684,12 @@ void CreateDefaultIniFile(const char* fileName)
             fprintf(datei, "; Fuer MQTT wird eine Installation von Mosquitto benoetigt, \n");
             fprintf(datei, "; siehe: https://mosquitto.org/download/\n");
             fprintf(datei, ";\n");
-            fprintf(datei, "; PATH beinhaltet den kompletten Pfad zur mosquitto_pub.exe (inkl. EXE)\n");
+            #ifdef _WIN32
+                fprintf(datei, "; PATH beinhaltet den kompletten Pfad zur mosquitto_pub.exe (inkl. EXE)\n");
+            #else
+                fprintf(datei, "; PATH beinhaltet den kompletten Pfad zur mosquitto_pub Binary\n");
+                fprintf(datei, ";   siehe: whereis mosquitto_pub\n");
+            #endif
             fprintf(datei, "; HOST kann eine IP-Adresse oder ein Hostname (FQDN) sein\n");
             fprintf(datei, ";   also 127.0.0.1 oder meine-broker-fqdn\n");
             fprintf(datei, "; PORT des Brokers (anzugeben, falls abweichend von 1883)\n");
@@ -1602,7 +1725,11 @@ void CreateDefaultIniFile(const char* fileName)
             fprintf(datei, "\n");
 
             fprintf(datei, "[MQTT]\n");
-            fprintf(datei, "PATH=C:\\Programme\\mosquitto\\mosquitto_pub.exe\n");
+            #ifdef _WIN32
+                fprintf(datei, "PATH=C:\\Programme\\mosquitto\\mosquitto_pub.exe\n");
+            #else
+                fprintf(datei, "PATH=/usr/bin/mosquitto_pub\n");
+            #endif
             fprintf(datei, "HOST=test.mosquitto.org\n");
             fprintf(datei, "PORT=\n");
             fprintf(datei, "USER=\n");
@@ -1614,9 +1741,9 @@ void CreateDefaultIniFile(const char* fileName)
             if (random_hex != NULL)
             {
                 snprintf(topicStart, sizeof(topicStart), "TOPIC_START=lh2mqtt/%s/start\n", random_hex);
-                fprintf(datei, topicStart);
+                fprintf(datei, "%s", topicStart);
                 snprintf(topicStop, sizeof(topicStop), "TOPIC_STOP=lh2mqtt/%s/stop\n", random_hex);
-                fprintf(datei, topicStop);
+                fprintf(datei, "%s", topicStop);
                 free(random_hex);
             }
             fprintf(datei, "\n");
@@ -1632,6 +1759,10 @@ void CreateDefaultIniFile(const char* fileName)
 
             fprintf(datei, "[LOGGING]\n");
             fprintf(datei, "LOG_MQTT_MSG=1\n");
+            fprintf(datei, "\n");
+
+            fprintf(datei, "[GENERAL]\n");
+            fprintf(datei, "LANGUAGE=DE\n");
             fprintf(datei, "\n");
 
             fclose(datei);
@@ -1658,7 +1789,7 @@ char* GetCurrDate(const char* format)
     time(&currentTime);
 
     // get local time
-    if (localtime_s(&timeInfo, &currentTime) != 0) {
+    if (LocalTimeSafe(&currentTime, &timeInfo) != 0) {
         // Error within localtime_s
         return NULL;
     }

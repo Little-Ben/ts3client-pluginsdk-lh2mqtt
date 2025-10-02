@@ -10,8 +10,15 @@
 #if defined(WIN32) || defined(__WIN32__) || defined(_WIN32)
 #define PLUGINS_EXPORTDLL __declspec(dllexport)
 #else
-#define PLUGINS_EXPORTDLL __attribute__((visibility("default")))
-#endif
+    #define PLUGINS_EXPORTDLL __attribute__((visibility("default")))
+    #ifndef BOOL
+        typedef int BOOL;
+        #define TRUE  1
+        #define FALSE 0
+    #endif // BOOL
+    typedef wchar_t* LPWSTR;
+    typedef unsigned long DWORD;
+#endif // WIN32
 
 #ifdef __cplusplus
 extern "C" {
@@ -156,7 +163,7 @@ PLUGINS_EXPORTDLL const char* ts3plugin_keyPrefix();
 
 /* Plugin specific function */
 void   ExecuteCommandInBackground(const char* command, const char* name, uint64 serverConnectionHandlerID);
-void   ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, BOOL bNoLog);
+void   ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, size_t bufferSize, BOOL bNoLog);
 BOOL   WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value);
 LPWSTR ConvertToUnicode(const char* str);
 void   FreeWideString(LPWSTR str);

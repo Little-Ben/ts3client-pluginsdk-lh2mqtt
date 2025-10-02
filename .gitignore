@@ -401,3 +401,9 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# unix specific
+*.so
+*.out
+*.o
+*.swp
