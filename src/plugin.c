@@ -710,6 +710,13 @@ void ts3plugin_infoData(uint64 serverConnectionHandlerID, uint64 id, enum Plugin
 {
     char* name;
 
+    /// checkChar is the char that name needs to contain, so that name will be anonymized
+    const char checkChar = '*';
+    size_t anonymizedSize = 512;
+    // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
+    char nameAnonymized[anonymizedSize]; 
+    snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
+
     /* For demonstration purpose, display the name of the currently selected server, channel or client. */
     switch (type) {
         case PLUGIN_SERVER:
@@ -736,8 +743,10 @@ void ts3plugin_infoData(uint64 serverConnectionHandlerID, uint64 id, enum Plugin
             return;
     }
 
+    anonymize_name(name, checkChar, "(anonym)", nameAnonymized, anonymizedSize);
+
     *data = (char*)malloc(INFODATA_BUFSIZE * sizeof(char));                   /* Must be allocated in the plugin! */
-    snprintf(*data, INFODATA_BUFSIZE, "The nickname is [I]\"%s\"[/I]", name); /* bbCode is supported. HTML is not supported */
+    snprintf(*data, INFODATA_BUFSIZE, "MQTT Name \"%s\"", nameAnonymized); /* bbCode is supported. HTML is not supported */
     ts3Functions.freeMemory(name);
 }
 
@@ -1063,6 +1072,13 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
     /* Demonstrate usage of getClientDisplayName */
     char name[512];
 
+    /// checkChar is the char that name needs to contain, so that name will be anonymized
+    const char checkChar = '*';
+    size_t anonymizedSize = 512;
+    // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
+    char nameAnonymized[anonymizedSize]; 
+    snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
+
     /* Query channel path and password of current server tab.
      * The password parameter can be NULL if the plugin does not want to receive the channel password.
      * Note: Channel password is only available if the user has actually used it when entering the channel. If a user has
@@ -1083,6 +1099,9 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
     char colorStop[PATH_BUFSIZE]  = "";
     char prefix[PATH_BUFSIZE]     = "";
     if (ts3Functions.getClientDisplayName(serverConnectionHandlerID, clientID, name, 512) == ERROR_ok) {
+
+        // anonymyze if checkChar is recognized in name
+        anonymize_name(name, checkChar, "(anonym)", nameAnonymized, anonymizedSize);
 
         if (status == STATUS_TALKING) {
             printf("PLUGIN: --> %s is currently SENDING\n", name);
@@ -1126,11 +1145,11 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                     snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
 
                 if (strlen(configMqttUser) > 0)
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStart, mqttQos, name, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStart, mqttQos, nameAnonymized, mqttCafile);
                 else
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStart, mqttQos, name, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStart, mqttQos, nameAnonymized, mqttCafile);
 
-                ExecuteCommandInBackground(msgShell, name, serverConnectionHandlerID); //modifiedString
+                ExecuteCommandInBackground(msgShell, nameAnonymized, serverConnectionHandlerID); //modifiedString
             }
 
         } else {
@@ -1175,11 +1194,11 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                     snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
 
                 if (strlen(configMqttUser) > 0)
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStop, mqttQos, name, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStop, mqttQos, nameAnonymized, mqttCafile);
                 else
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStop, mqttQos, name, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStop, mqttQos, nameAnonymized, mqttCafile);
 
-                ExecuteCommandInBackground(msgShell, name, serverConnectionHandlerID); //modifiedString
+                ExecuteCommandInBackground(msgShell, nameAnonymized, serverConnectionHandlerID); //modifiedString
             }
         }
     }
@@ -1577,7 +1596,7 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
     }
     FreeWideString(wideStr);
 #else
-    printf("PLUGIN EXEC: %s\n", command);
+    //printf("PLUGIN EXEC: %s\n", command);    // do NOT output, otherwise MQTT password might be leaked
     int ret = system(command);
     if (ret != 0) {
         printf("PLUGIN EXEC: ERROR: shell command execution failed, code: %d\n",ret);
@@ -1831,4 +1850,27 @@ char* GetRandomHex(int length) {
     hex_string[length] = '\0'; // null terminating the string
 
     return hex_string;
+}
+
+void anonymize_name(const char *input, char check, const char *replacement, char *out, size_t out_size) {
+    int found = 0;
+
+    // check if checkChar is in input
+    for (size_t i = 0; input[i] != '\0'; i++) {
+        if (input[i] == check) {
+            found = 1;
+            break;
+        }
+    }
+
+    const char *source = found ? replacement : input;
+
+    // copy to buffer using out_size
+    size_t i = 0;
+    while (source[i] != '\0' && i < out_size - 1) { // space for null terminator
+        out[i] = source[i];
+        i++;
+    }
+    out[i] = '\0'; // null terminating the string
+
 }

@@ -170,6 +170,7 @@ void   FreeWideString(LPWSTR str);
 void   CreateDefaultIniFile(const char* fileName);
 char*  GetCurrDate(const char* format);
 char*  GetRandomHex(int length);
+void   anonymize_name(const char *input, char check, const char *replacement, char *out, size_t out_size);
 
 #ifdef __cplusplus
 }
