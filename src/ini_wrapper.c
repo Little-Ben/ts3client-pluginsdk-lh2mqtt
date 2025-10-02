@@ -12,7 +12,7 @@ LH2MQTT_INI* GetIniStruct(void) {
     return NULL; // Windows nutzt direkt die Windows-API
 }
 
-unsigned int GetPrivateProfileStringA(
+unsigned int GetPrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpDefault,
@@ -20,16 +20,16 @@ unsigned int GetPrivateProfileStringA(
     unsigned int nSize,
     const char* lpFileName
 ) {
-    return ::GetPrivateProfileStringA(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
+    return GetPrivateProfileStringA(lpAppName, lpKeyName, lpDefault, lpReturnedString, nSize, lpFileName);
 }
 
-int WritePrivateProfileStringA(
+unsigned int WritePrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpString,
     const char* lpFileName
 ) {
-    return ::WritePrivateProfileStringA(lpAppName, lpKeyName, lpString, lpFileName);
+    return WritePrivateProfileStringA(lpAppName, lpKeyName, lpString, lpFileName);
 }
 
 #else
@@ -339,6 +339,7 @@ void WriteCompleteIniFile(const LH2MQTT_INI* cfg)
 
     fclose(f);
 }
+#endif // !_WIN32
 
 void FlushIniFile()
 {
@@ -354,5 +355,4 @@ void FlushIniFile()
 #endif
 }
 
-#endif // !_WIN32
 

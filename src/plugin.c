@@ -148,7 +148,7 @@ const char* ts3plugin_description()
 {
     /* If you want to use wchar_t, see ts3plugin_name() on how to use */
     if (strcmp(configGeneralLanguage, "DE") == 0)
-        return "Dieses Plugin überträgt den aktuell sprechenden User (LastHeard) an einen MQTT-Broker und/oder an den Channel-Tab.";
+        return "Dieses Plugin sendet den aktuell sprechenden User (LastHeard) an einen MQTT-Broker und/oder an den Channel-Tab.";
 
     return "This plugin transmits the currently speaking user (LastHeard) to an MQTT broker and/or the channel tab.";
 }
@@ -1603,7 +1603,7 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
 void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, size_t bufferSize, BOOL bHideLog)
 {
     // read value from INI file
-    DWORD bytesRead = GetPrivateProfileStringA(sectionName, keyName, "", returnValue, bufferSize, iniFileName);
+    DWORD bytesRead = GetPrivateProfileStringAWrapper(sectionName, keyName, "", returnValue, bufferSize, iniFileName);
     
     if (bytesRead == 0) {
         // set value to an empty string, if it was not found
@@ -1619,7 +1619,7 @@ void ReadIniValue(const char* iniFileName, const char* sectionName, const char* 
 BOOL WriteIniValue(const char* iniFileName, const char* sectionName, const char* keyName, const char* value)
 {
     // Write value to the INI file
-    BOOL result = WritePrivateProfileStringA(sectionName, keyName, value, iniFileName);
+    BOOL result = WritePrivateProfileStringAWrapper(sectionName, keyName, value, iniFileName);
 
     if (!result) {
         // Handle the error if the write operation fails

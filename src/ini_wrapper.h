@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-// Windows API kompatible Funktionen
-unsigned int GetPrivateProfileStringA(
+// Windows API Wrapper
+unsigned int GetPrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpDefault,
@@ -18,7 +18,8 @@ unsigned int GetPrivateProfileStringA(
     const char* lpFileName
 );
 
-int WritePrivateProfileStringA(
+// Windows API Wrapper
+unsigned int WritePrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpString,
