@@ -1603,7 +1603,7 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
 void ReadIniValue(const char* iniFileName, const char* sectionName, const char* keyName, char* returnValue, size_t bufferSize, BOOL bHideLog)
 {
     // read value from INI file
-    DWORD bytesRead = GetPrivateProfileStringAWrapper(sectionName, keyName, "", returnValue, bufferSize, iniFileName);
+    unsigned int bytesRead = GetPrivateProfileStringAWrapper(sectionName, keyName, "", returnValue, bufferSize, iniFileName);
     
     if (bytesRead == 0) {
         // set value to an empty string, if it was not found

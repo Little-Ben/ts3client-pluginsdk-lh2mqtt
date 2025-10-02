@@ -109,7 +109,7 @@ LH2MQTT_INI* GetIniStruct(void) {
     return &iniData;
 }
 
-unsigned int GetPrivateProfileStringA(
+unsigned int GetPrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpDefault,
@@ -158,7 +158,7 @@ unsigned int GetPrivateProfileStringA(
     return strlen(lpReturnedString);
 }
 
-int WritePrivateProfileStringA(
+unsigned int WritePrivateProfileStringAWrapper(
     const char* lpAppName,
     const char* lpKeyName,
     const char* lpString,
