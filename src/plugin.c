@@ -714,7 +714,7 @@ void ts3plugin_infoData(uint64 serverConnectionHandlerID, uint64 id, enum Plugin
     const char checkChar = '*';
     size_t anonymizedSize = 512;
     // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
-    char nameAnonymized[anonymizedSize]; 
+    char nameAnonymized[512]; /* MSVC kennt keine VLAs */
     snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
 
     /* For demonstration purpose, display the name of the currently selected server, channel or client. */
@@ -1188,7 +1188,7 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
     const char checkChar = '*';
     size_t anonymizedSize = 512;
     // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
-    char nameAnonymized[anonymizedSize]; 
+    char nameAnonymized[512]; /* MSVC kennt keine VLAs */
     snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
 
     /* Query channel path and password of current server tab.
