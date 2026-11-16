@@ -127,7 +127,7 @@ const char* ts3plugin_name()
 /* Plugin version */
 const char* ts3plugin_version()
 {
-    return "1.26.2";
+    return "1.26.2-topicvars";
 }
 
 /* Plugin API version. Must be the same as the clients API major version, else the plugin fails to load. */
@@ -714,7 +714,7 @@ void ts3plugin_infoData(uint64 serverConnectionHandlerID, uint64 id, enum Plugin
     const char checkChar = '*';
     size_t anonymizedSize = 512;
     // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
-    char nameAnonymized[anonymizedSize]; 
+    char nameAnonymized[512]; /* MSVC kennt keine VLAs */
     snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
 
     /* For demonstration purpose, display the name of the currently selected server, channel or client. */
@@ -1067,6 +1067,118 @@ int ts3plugin_onTextMessageEvent(uint64 serverConnectionHandlerID, anyID targetM
     return 0; /* 0 = handle normally, 1 = client will ignore the text message */
 }
 
+/* ---------------------------------------------------------------------------
+ * Erweiterung "topicvars":
+ * In TOPIC_START / TOPIC_STOP koennen Platzhalter verwendet werden:
+ *   {server}  -> Name des virtuellen Servers (als "slug", z.B. voice_gateway_deutschland_de)
+ *   {channel} -> Name des Kanals, in dem der Sprecher sitzt (als "slug", z.B. raum_1)
+ *   {tab}     -> Nummer der Server-Verbindung (serverConnectionHandlerID)
+ * Ohne Platzhalter verhaelt sich das Plugin exakt wie bisher.
+ * Slug: Kleinbuchstaben/Ziffern, Umlaute -> ae/oe/ue/ss, alles andere -> '_'
+ * ------------------------------------------------------------------------- */
+static char lastMqttTopic[PATH_BUFSIZE] = "";
+
+static void lh_slugify(const char* in, char* out, size_t outSize, size_t maxLen)
+{
+    size_t o = 0;
+    int    lastUnderscore = 1; /* kein '_' am Anfang */
+    const unsigned char* p;
+
+    if (outSize == 0)
+        return;
+    if (maxLen == 0 || maxLen > outSize - 1)
+        maxLen = outSize - 1;
+
+    for (p = (const unsigned char*)in; p && *p && o < maxLen; p++) {
+        const char* rep       = NULL;
+        char        single[2] = {0, 0};
+
+        if (p[0] == 0xC3 && p[1] != 0) {
+            switch (p[1]) {
+                case 0xA4: case 0x84: rep = "ae"; break; /* ae / Ae */
+                case 0xB6: case 0x96: rep = "oe"; break; /* oe / Oe */
+                case 0xBC: case 0x9C: rep = "ue"; break; /* ue / Ue */
+                case 0x9F:            rep = "ss"; break; /* sz */
+                default:              rep = NULL; break;
+            }
+            p++; /* zweites UTF-8-Byte ueberspringen */
+        } else if ((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9')) {
+            single[0] = (char)*p;
+            rep       = single;
+        } else if (*p >= 'A' && *p <= 'Z') {
+            single[0] = (char)(*p - 'A' + 'a');
+            rep       = single;
+        }
+
+        if (rep) {
+            for (; *rep && o < maxLen; rep++)
+                out[o++] = *rep;
+            lastUnderscore = 0;
+        } else if (!lastUnderscore) {
+            out[o++]       = '_';
+            lastUnderscore = 1;
+        }
+    }
+    while (o > 0 && out[o - 1] == '_')
+        o--;
+    out[o] = '\0';
+    if (o == 0)
+        snprintf(out, outSize, "unbekannt");
+}
+
+static void lh_replace_all(char* buf, size_t bufSize, const char* key, const char* val)
+{
+    char   tmp[PATH_BUFSIZE];
+    char*  pos;
+    size_t keyLen = strlen(key);
+
+    while ((pos = strstr(buf, key)) != NULL) {
+        size_t prefix = (size_t)(pos - buf);
+        snprintf(tmp, sizeof(tmp), "%.*s%s%s", (int)prefix, buf, val, pos + keyLen);
+        snprintf(buf, bufSize, "%s", tmp);
+    }
+}
+
+static void lh_build_topic(const char* tmpl, uint64 schID, anyID clientID, char* out, size_t outSize)
+{
+    char  slug[PATH_BUFSIZE];
+    char* s = NULL;
+
+    snprintf(out, outSize, "%s", tmpl);
+    if (strchr(out, '{') == NULL)
+        return; /* keine Platzhalter: Topic unveraendert */
+
+    if (strstr(out, "{server}") != NULL) {
+        if (ts3Functions.getServerVariableAsString(schID, VIRTUALSERVER_NAME, &s) == ERROR_ok && s != NULL) {
+            lh_slugify(s, slug, sizeof(slug), 40);
+            ts3Functions.freeMemory(s);
+            s = NULL;
+        } else {
+            snprintf(slug, sizeof(slug), "unbekannt");
+        }
+        lh_replace_all(out, outSize, "{server}", slug);
+    }
+
+    if (strstr(out, "{channel}") != NULL) {
+        uint64 chID = 0;
+        if (ts3Functions.getChannelOfClient(schID, clientID, &chID) == ERROR_ok &&
+            ts3Functions.getChannelVariableAsString(schID, chID, CHANNEL_NAME, &s) == ERROR_ok && s != NULL) {
+            lh_slugify(s, slug, sizeof(slug), 40);
+            ts3Functions.freeMemory(s);
+            s = NULL;
+        } else {
+            snprintf(slug, sizeof(slug), "unbekannt");
+        }
+        lh_replace_all(out, outSize, "{channel}", slug);
+    }
+
+    if (strstr(out, "{tab}") != NULL) {
+        char tab[32];
+        snprintf(tab, sizeof(tab), "%llu", (unsigned long long)schID);
+        lh_replace_all(out, outSize, "{tab}", tab);
+    }
+}
+
 void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int status, int isReceivedWhisper, anyID clientID)
 {
     /* Demonstrate usage of getClientDisplayName */
@@ -1076,7 +1188,7 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
     const char checkChar = '*';
     size_t anonymizedSize = 512;
     // if name contains checkChar, then name is anonymized via anonymize_name(), otherwise it is simply the unmodified name
-    char nameAnonymized[anonymizedSize]; 
+    char nameAnonymized[512]; /* MSVC kennt keine VLAs */
     snprintf(nameAnonymized, PATH_BUFSIZE, "(anonym)");
 
     /* Query channel path and password of current server tab.
@@ -1144,10 +1256,14 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                 if (strlen(configMqttCafile) > 0)
                     snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
 
+                char topic[PATH_BUFSIZE];
+                lh_build_topic(configMqttTopicStart, serverConnectionHandlerID, clientID, topic, sizeof(topic));
+                snprintf(lastMqttTopic, sizeof(lastMqttTopic), "%s", topic);
+
                 if (strlen(configMqttUser) > 0)
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStart, mqttQos, nameAnonymized, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t \"%s\" %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, topic, mqttQos, nameAnonymized, mqttCafile);
                 else
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStart, mqttQos, nameAnonymized, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t \"%s\" %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, topic, mqttQos, nameAnonymized, mqttCafile);
 
                 ExecuteCommandInBackground(msgShell, nameAnonymized, serverConnectionHandlerID); //modifiedString
             }
@@ -1193,10 +1309,14 @@ void ts3plugin_onTalkStatusChangeEvent(uint64 serverConnectionHandlerID, int sta
                 if (strlen(configMqttCafile) > 0)
                     snprintf(mqttCafile, sizeof(mqttCafile), "--cafile \"%s\"", configMqttCafile);
 
+                char topic[PATH_BUFSIZE];
+                lh_build_topic(configMqttTopicStop, serverConnectionHandlerID, clientID, topic, sizeof(topic));
+                snprintf(lastMqttTopic, sizeof(lastMqttTopic), "%s", topic);
+
                 if (strlen(configMqttUser) > 0)
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, configMqttTopicStop, mqttQos, nameAnonymized, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -u %s -P %s -t \"%s\" %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttUser, configMqttPassword, topic, mqttQos, nameAnonymized, mqttCafile);
                 else
-                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t %s %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, configMqttTopicStop, mqttQos, nameAnonymized, mqttCafile);
+                    snprintf(msgShell, sizeof(msgShell), "\"%s\" -h %s %s -t \"%s\" %s -m \"%s\" %s", configMqttExe, configMqttHost, mqttPort, topic, mqttQos, nameAnonymized, mqttCafile);
 
                 ExecuteCommandInBackground(msgShell, nameAnonymized, serverConnectionHandlerID); //modifiedString
             }
@@ -1578,7 +1698,7 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
         if (strlen(name) > 0) {
             if (atoi(configLogMqttMsg) == 1)
             {
-                snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", configMqttTopicStart, name);
+                snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", lastMqttTopic, name);
                 ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
                 printf("PLUGIN: LOG MQTT MSG: %s\n",msg);
             }
@@ -1606,7 +1726,7 @@ void ExecuteCommandInBackground(const char* command, const char* name, uint64 se
     if (strlen(name) > 0) {
         if (atoi(configLogMqttMsg) == 1)
         {
-            snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", configMqttTopicStart, name);
+            snprintf(msg, sizeof(msg), "[MQTT] Topic=%s, Msg=%s", lastMqttTopic, name);
             ts3Functions.logMessage(msg, LogLevel_INFO, "Plugin lh2mqtt", serverConnectionHandlerID);
             printf("PLUGIN: LOG MQTT MSG: %s\n",msg);
         }
