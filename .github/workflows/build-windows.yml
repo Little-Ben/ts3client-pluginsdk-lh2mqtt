@@ -1,0 +1,49 @@
+name: Build lh2mqtt (Windows)
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Build x64 und Win32 (Release)
+        shell: pwsh
+        run: |
+          $sol = Join-Path $env:GITHUB_WORKSPACE 'src/'
+          foreach ($plat in 'x64','Win32') {
+            msbuild src/test_plugin.vcxproj /m /nologo /p:Configuration=Release /p:Platform=$plat /p:PlatformToolset=v143 /p:SolutionDir=$sol /p:PostBuildEventUseInBuild=false
+            if ($LASTEXITCODE -ne 0) { throw "Build $plat fehlgeschlagen" }
+          }
+          Get-ChildItem src/Release -Recurse -Filter *.dll | ForEach-Object { $_.FullName }
+
+      - name: TS3-Plugin-Paket bauen
+        shell: pwsh
+        run: |
+          $nl  = [Environment]::NewLine
+          $pkg = Join-Path $env:RUNNER_TEMP 'pkg'
+          New-Item -ItemType Directory -Force (Join-Path $pkg 'plugins/lh2mqtt') | Out-Null
+          Copy-Item src/Release/x64/lh2mqtt_x64.dll   (Join-Path $pkg 'plugins/')
+          Copy-Item src/Release/Win32/lh2mqtt_x86.dll (Join-Path $pkg 'plugins/')
+          Copy-Item src/icons/lh2mqtt/*.png           (Join-Path $pkg 'plugins/lh2mqtt/')
+          $ini  = (Get-Content src/icons/lh2mqtt/package_26_begin.tmpl -Raw).TrimEnd() + $nl
+          $ini += 'Version = 1.26.2-topicvars' + $nl
+          $ini += Get-Content src/icons/lh2mqtt/package_end.tmpl -Raw
+          Set-Content -Path (Join-Path $pkg 'package.ini') -Value $ini -Encoding ascii -NoNewline
+          New-Item -ItemType Directory -Force out | Out-Null
+          Compress-Archive -Path (Join-Path $pkg 'plugins'),(Join-Path $pkg 'package.ini') -DestinationPath out/lh2mqtt_1_26_2_topicvars.zip -Force
+          Move-Item out/lh2mqtt_1_26_2_topicvars.zip out/lh2mqtt_1_26_2_topicvars.ts3_plugin -Force
+          Copy-Item src/Release/x64/lh2mqtt_x64.dll   out/
+          Copy-Item src/Release/Win32/lh2mqtt_x86.dll out/
+          Get-ChildItem out | ForEach-Object { '{0}  {1} Bytes' -f $_.Name, $_.Length }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lh2mqtt-topicvars
+          path: out/*
